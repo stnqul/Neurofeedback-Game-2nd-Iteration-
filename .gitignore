@@ -1,0 +1,4 @@
+# exclude the executable, log and python workbench files
+executable/
+logs/
+__pycache__/
