@@ -44,7 +44,7 @@ class Game:
         os.chdir(dname)
 
         self.EEGSensor = Sensor()
-        self.button_background_img = pygame.image.load('images/UI_Flat_Frame_02_Horizontal.png')
+        self.button_background_img = pygame.image.load('../images/UI_Flat_Frame_02_Horizontal.png')
         self.WIDTH, self.HEIGHT = WIN_WIDTH, WIN_HEIGHT
         self.win = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
         self.screen = pygame.display.get_surface()
@@ -328,56 +328,211 @@ class Game:
         def __init__(self, period = 1):
             self.cross_width = 20
             self.cross_height = 120
+            
             self.cross_x = WIN_WIDTH / 2 - self.cross_width / 2 - 1
             self.cross_y = WIN_HEIGHT / 2 - self.cross_height / 2 - 1
-            
+            # self.cross_y = WIN_HEIGHT * 55 / 100 - self.cross_height / 2 - 1
+
+            self.horizontal_x = self.cross_x - (self.cross_height / 2 - self.cross_width / 2)
+            self.horizontal_y = self.cross_y + (self.cross_height / 2 - self.cross_width / 2)
+            self.horizontal_width = self.cross_height
+            self.horizontal_height = self.cross_width
+
             self.flicker_width = 121
             self.flicker_height = 121
             self.cross_flicker_distance = 120
 
+            self.CROSS_COLOR = "grey"
+            
+            self.flicker_left_x = self.horizontal_x - self.flicker_width - self.cross_flicker_distance
+            self.flicker_right_x = self.horizontal_x + self.horizontal_width + self.cross_flicker_distance
+            self.flicker_y = self.cross_y
+
+            self.arrow_body_width = 120
+            self.arrow_body_height = 90
+
+            self.arrow_tip_width = 30
+            self.arrow_tip_height = 150
+
+            # Right-pointing arrow
+            self.arrow_body_x_right = WIN_WIDTH / 2 - self.arrow_body_width / 2 - self.arrow_tip_width / 2
+            self.arrow_body_y_right = WIN_HEIGHT / 2 - self.arrow_body_height / 2
+
+            self.arrow_tip_x1_right = self.arrow_body_x_right + self.arrow_body_width
+            self.arrow_tip_y1_right = WIN_HEIGHT / 2 - self.arrow_tip_height / 2
+            
+            self.arrow_tip_x2_right = self.arrow_body_x_right + self.arrow_body_width
+            self.arrow_tip_y2_right = WIN_HEIGHT / 2 + self.arrow_tip_height / 2
+            
+            self.arrow_tip_x3_right = self.arrow_body_x_right + self.arrow_body_width + self.arrow_tip_width
+            self.arrow_tip_y3_right = WIN_HEIGHT / 2
+
+            # Left-pointing arrow
+            self.arrow_body_x_left = WIN_WIDTH / 2 - self.arrow_body_width / 2 + self.arrow_tip_width / 2
+            self.arrow_body_y_left = WIN_HEIGHT / 2 - self.arrow_body_height / 2
+
+            self.arrow_tip_x1_left = self.arrow_body_x_left
+            self.arrow_tip_y1_left = WIN_HEIGHT / 2 - self.arrow_tip_height / 2
+            
+            self.arrow_tip_x2_left = self.arrow_body_x_left
+            self.arrow_tip_y2_left = WIN_HEIGHT / 2 + self.arrow_tip_height / 2
+            
+            self.arrow_tip_x3_left = self.arrow_body_x_left - self.arrow_tip_width
+            self.arrow_tip_y3_left = WIN_HEIGHT / 2
+
+            self.ARROW_COLOR = "black"
+
+            self.FLICKER_TEST_COLOR_BG = "white"
+            self.FLICKER_TEST_COLOR_PULSE = "grey"
+
             self.period = period
             self.flicker_count = 0
+
+            # Test timer variables
+            self.instruction_period_secs = 7
+            self.instruction_period_fps = FPS * self.instruction_period_secs
+            self.contdown_secs = 3
+            self.contdown_fps = FPS * self.contdown_secs
+            self.single_test_period_secs = 30
+            self.single_test_period_fps = FPS * self.single_test_period_secs
+            self.test_halt_secs = 3
+            self.test_halt_fps = FPS * self.test_halt_secs
+
+            self.test_timer_fps = 0
+
+            self.direction = 0 # 0 - right, 1 - left
+
+            self.FLICKER_FONT = pygame.font.SysFont("calibri", 30)
+            self.TEST_END_FONT = pygame.font.SysFont("calibri", 50)
+
+        def draw_arrow(self, win):
+            if self.direction == 0:
+                pygame.draw.rect(win, self.ARROW_COLOR,
+                                (self.arrow_body_x_right, self.arrow_body_y_right,
+                                self.arrow_body_width, self.arrow_body_height))
+                pygame.draw.polygon(win, self.ARROW_COLOR,
+                                    [(self.arrow_tip_x1_right, self.arrow_tip_y1_right),
+                                    (self.arrow_tip_x2_right, self.arrow_tip_y2_right),
+                                    (self.arrow_tip_x3_right, self.arrow_tip_y3_right)])
+            else:
+                pygame.draw.rect(win, self.ARROW_COLOR,
+                                (self.arrow_body_x_left, self.arrow_body_y_left,
+                                self.arrow_body_width, self.arrow_body_height))
+                pygame.draw.polygon(win, self.ARROW_COLOR,
+                                    [(self.arrow_tip_x1_left, self.arrow_tip_y1_left),
+                                    (self.arrow_tip_x2_left, self.arrow_tip_y2_left),
+                                    (self.arrow_tip_x3_left, self.arrow_tip_y3_left)])
+
+        def draw_flicker_test_window_complete(self, win):
+            """
+            Draw method for the complete flicker test
+            """
+            win.fill(self.FLICKER_TEST_COLOR_BG)
+
+            # There are 4 stages to the test
+
+            # Stage 1: Instructing the user
+            if self.test_timer_fps < self.instruction_period_fps:
+                if self.direction == 0:
+                    dir_text = "right"
+                else:
+                    dir_text = "left"
+                instr_text = self.FLICKER_FONT.render(f"Next up, focus on the {dir_text} side of the screen", 1, "black")
+                win.blit(instr_text, (WIN_WIDTH / 2 - instr_text.get_width() / 2,
+                                      WIN_HEIGHT / 4))
+                self.draw_arrow(win)
+                self.test_timer_fps += 1
+
+            # Stage 2: Countdown to the flicker test
+            elif self.test_timer_fps < self.instruction_period_fps + self.contdown_fps:
+                if self.test_timer_fps < self.instruction_period_fps + self.contdown_fps / 3:
+                    countdown_text = self.FLICKER_FONT.render("3", 1, "black")
+                elif self.test_timer_fps < self.instruction_period_fps + self.contdown_fps * 2 / 3:
+                    countdown_text = self.FLICKER_FONT.render("2", 1, "black")
+                else:
+                    countdown_text = self.FLICKER_FONT.render("1", 1, "black")
+
+                win.blit(countdown_text, (WIN_WIDTH / 2 - countdown_text.get_width() / 2,
+                                          WIN_HEIGHT / 4))
+                self.draw_arrow(win)
+                self.test_timer_fps += 1
+
+            # Stage 3: The flicker test itself
+            elif self.test_timer_fps < self.instruction_period_fps +    \
+                                       self.contdown_fps +              \
+                                       self.single_test_period_fps:
+                # Focus cross
+                pygame.draw.rect(win, self.CROSS_COLOR,
+                                (self.cross_x, self.cross_y,
+                                 self.cross_width, self.cross_height))
+                pygame.draw.rect(win, self.CROSS_COLOR,
+                                (self.horizontal_x, self.horizontal_y,
+                                 self.horizontal_width, self.horizontal_height))
+
+                # Flickering patches
+                if self.flicker_count <= self.period // 2:
+                    color = self.FLICKER_TEST_COLOR_BG
+                else:
+                    color = self.FLICKER_TEST_COLOR_PULSE
+                if self.flicker_count == self.period:
+                    self.flicker_count = 0
+                else:
+                    self.flicker_count += 1
+
+                pygame.draw.rect(win, color,
+                                (self.flicker_left_x, self.flicker_y,
+                                 self.flicker_width, self.flicker_height))
+                pygame.draw.rect(win, color,
+                                (self.flicker_right_x, self.flicker_y,
+                                 self.flicker_width, self.flicker_height))
+                
+                self.test_timer_fps += 1
+            
+            # Stage 4: Post-test cooldown period
+            else:
+                if self.test_timer_fps == self.instruction_period_fps +    \
+                                          self.contdown_fps +              \
+                                          self.single_test_period_fps +    \
+                                          self.test_halt_fps:
+                    self.test_timer_fps = 0
+                    self.direction = 1 - self.direction
+                else:
+                    test_end_text = self.TEST_END_FONT.render(f"Test end", 1, "black")
+                    win.blit(test_end_text, (WIN_WIDTH / 2 - test_end_text.get_width() / 2,
+                                             WIN_HEIGHT / 4))
+                    self.test_timer_fps += 1
+
+            pygame.display.update()
 
         def draw_flicker_test_window(self, win):
             """
             Draw method for the flicker test
             """
-            win.fill("white")
-
-            color_increment = 255 / self.period
-            color = (0,0,0)
+            win.fill(self.FLICKER_TEST_COLOR_BG)
 
             # Focus cross
-            pygame.draw.rect(win, color,
+            pygame.draw.rect(win, self.CROSS_COLOR,
                              (self.cross_x, self.cross_y,
                               self.cross_width, self.cross_height))
-            
-            horizontal_x = self.cross_x - (self.cross_height / 2 - self.cross_width / 2)
-            horizontal_y = self.cross_y + (self.cross_height / 2 - self.cross_width / 2)
-            horizontal_width = self.cross_height
-            horizontal_height = self.cross_width
+            pygame.draw.rect(win, self.CROSS_COLOR,
+                             (self.horizontal_x, self.horizontal_y,
+                              self.horizontal_width, self.horizontal_height))
 
-            pygame.draw.rect(win, color,
-                             (horizontal_x, horizontal_y,
-                              horizontal_width, horizontal_height))
-
-            # Flickering areas
+            # Flickering patches
+            if self.flicker_count <= self.period // 2:
+                color = self.FLICKER_TEST_COLOR_BG
+            else:
+                color = self.FLICKER_TEST_COLOR_PULSE
             if self.flicker_count == self.period:
                 self.flicker_count = 0
-                color = (0,0,0)
             else:
                 self.flicker_count += 1
-                color = tuple(map((lambda c : c + color_increment), color))
-
-            flicker_left_x = horizontal_x - self.flicker_width - self.cross_flicker_distance
-            flicker_right_x = horizontal_x + horizontal_width + self.cross_flicker_distance
-            flicker_y = self.cross_y
 
             pygame.draw.rect(win, color,
-                             (flicker_left_x, flicker_y,
+                             (self.flicker_left_x, self.flicker_y,
                               self.flicker_width, self.flicker_height))
             pygame.draw.rect(win, color,
-                             (flicker_right_x, flicker_y,
+                             (self.flicker_right_x, self.flicker_y,
                               self.flicker_width, self.flicker_height))
 
             pygame.display.update()
@@ -425,28 +580,22 @@ class Game:
         horizontal_width = self.cross_height
         horizontal_height = self.cross_width
 
-        # if direction != 0:
-        #     if direction == 1:
-        #         flicker_x = cross_x_mid + horizontal_width / 2 + cross_flicker_distance
-        #     else: # direction == -1
-        #         flicker_x = cross_x_mid - horizontal_width / 2 - cross_flicker_distance - flicker_width
+        if direction != 0:
+            if direction == 1:
+                flicker_x = cross_x_mid + horizontal_width / 2 + cross_flicker_distance
+            else: # direction == -1
+                flicker_x = cross_x_mid - horizontal_width / 2 - cross_flicker_distance - flicker_width
 
-        #     # flicker_left_x = cross_x_mid - horizontal_width / 2 - cross_flicker_distance - flicker_width
-        #     # flicker_right_x = cross_x_mid + horizontal_width / 2 + cross_flicker_distance
-        #     flicker_y = paddle.get_y() - flicker_height - 30
+            # flicker_left_x = cross_x_mid - horizontal_width / 2 - cross_flicker_distance - flicker_width
+            # flicker_right_x = cross_x_mid + horizontal_width / 2 + cross_flicker_distance
+            flicker_y = paddle.get_y() - flicker_height - 30
 
-        #     # print(f"Left x diff: {cross_x_mid - (flicker_left_x + flicker_width)}\n")
-        #     # print(f"Right x diff: {flicker_right_x - cross_x_mid}\n\n")
+            # print(f"Left x diff: {cross_x_mid - (flicker_left_x + flicker_width)}\n")
+            # print(f"Right x diff: {flicker_right_x - cross_x_mid}\n\n")
 
-        #     pygame.draw.rect(win, color,
-        #                         (flicker_x, flicker_y,
-        #                         flicker_width, flicker_height))
-        
-        flicker_x = cross_x_mid + horizontal_width / 2 + cross_flicker_distance
-        flicker_y = paddle.get_y() - flicker_height - 30
-        pygame.draw.rect(win, color,
-                            (flicker_x, flicker_y,
-                            flicker_width, flicker_height))
+            pygame.draw.rect(win, color,
+                             (flicker_x, flicker_y,
+                              flicker_width, flicker_height))
 
         paddle.draw(win)
         ball.draw(win)
@@ -548,15 +697,15 @@ class Game:
         paddle = self.Paddle(paddle_x, paddle_y, self.PADDLE_WIDTH, self.PADDLE_HEIGHT, "red")
         ball = self.Ball(self.WIDTH / 2, paddle_y - self.BALL_RADIUS, self.BALL_RADIUS, "black", 8)
         gauge = self.Gauge(font=self.GAUGE_FONT, x=90, y=150, thickness=20, radius=60, arc_color=(0, 0, 0))
-        #                            Originally:   x: 90    y: WIN_HEIGHT - 120                           #
+        #                            Originally: x:90  y:WIN_HEIGHT - 120                           #
         flicker_window = self.FlickerWindow(period=1)
 
         bricks = self.generate_bricks(1, 10)
         lives = MAX_LIVES
 
-        graph_step = 100
-        current_graph_iterations = 0
-        graph_x, graph_y = (0,0)
+        # graph_step = 100
+        # current_graph_iterations = 0
+        # graph_x, graph_y = (0,0)
 
         def reset():
             paddle.x = paddle_x
@@ -686,7 +835,7 @@ class Game:
             
             # TODO: Under works
             elif self.flicker_test == True:
-                flicker_window.draw_flicker_test_window(self.win)
+                flicker_window.draw_flicker_test_window_complete(self.win)
                 
                 for j in range(4):
                     ys[j] = mySensor.get_data()[j][-100:]
@@ -726,7 +875,7 @@ class Game:
                     plt.style.use("ggplot")
                     plt.plot(self.x,self.y, scalex=True, scaley=True, color="red")
                     
-                anim = FuncAnimation(self.fig, animate, interval=100)
+                # anim = FuncAnimation(self.fig, animate, interval=100)
                 # plt.show()
                 
                 # time = np.array(range(graph_step * current_graph_iterations,
