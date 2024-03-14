@@ -3,29 +3,28 @@ import pygame.gfxdraw
 import math
 import numpy as np
 import os
+import atexit
 
 from matplotlib import pyplot as plt
-from matplotlib.animation import FuncAnimation
-# matplotlib.use("agg")
-# import matplotlib.backends.backend_agg as agg
-# import random
-# from itertools import count
+from sklearn.linear_model import LinearRegression
+from scipy.fft import rfft, rfftfreq
 
 from button import Button
 from sensor import Sensor
 from threading import Thread
 
-from sklearn.linear_model import LinearRegression
-
 
 # Initializations of some static variables:
 SESSION_LENGTH = 900
-BLINK_THRESHOLD = 0.00005
+BLINK_THRESHOLD = 5 * (10 ** -5) # 0.00005
+ATTENTION_THRESHOLD = 1 * (10 ** -5)
+
 WIN_WIDTH, WIN_HEIGHT = 700, 700 # !Original height: 800
 PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_VEL = 100, 20, 100
 BALL_RADIUS, BALL_INITIAL_VEL = 10, 4 # !Original velocity: 4
 MAX_DIFFICULTY, MAX_LIVES = 5, 5
-FPS = 60 # !Originally: 60
+FPS = 60
+SAMPLE_FREQ = 250
 
 def reading_task(mySensor: Sensor):
     """
@@ -63,7 +62,7 @@ class Game:
         self.MENU_TEXT_FONT = pygame.font.SysFont("comicsans", 20)
         self.GAUGE_FONT = pygame.font.SysFont("comicsans", 20)
         
-        # *Alt combo: bg azure & fl aliceblue
+        # Alternative combo: bg. azure & fl. aliceblue
         self.GAME_COLOR_BG = "ghostwhite"
         self.GAME_COLOR_FLICKER = "floralwhite"
 
@@ -82,6 +81,60 @@ class Game:
         self.cross_x = WIN_WIDTH / 2 - self.cross_width / 2 - 1
         self.cross_y = WIN_HEIGHT / 2 - self.cross_height / 2 - 1
         self.cross_color = "gray"
+
+        # Plotting (for debug purposes)
+        game_occ_1_plot_file_name = "../plots/game_occ_1.txt"
+        game_occ_2_plot_file_name = "../plots/game_occ_2.txt"
+        
+        os.makedirs(os.path.dirname(game_occ_1_plot_file_name), exist_ok=True)
+        os.makedirs(os.path.dirname(game_occ_2_plot_file_name), exist_ok=True)
+        self.game_occ_1_plot_file = open(game_occ_1_plot_file_name, 'w')
+        self.game_occ_2_plot_file = open(game_occ_2_plot_file_name, 'w')
+        
+        self.game_occ_plot_time_counter = 0
+
+        # Cleanup
+        atexit.register(self.cleanup)
+    
+    def cleanup(self):
+        self.game_occ_1_plot_file.close()
+
+    def log_current_data_buffer(self, ys, hemisphere):
+        for y in ys:
+            if hemisphere == 'occ_1':
+                self.game_occ_1_plot_file.write(f"{y} {self.game_occ_plot_time_counter}\n")
+            elif hemisphere == 'occ_2':
+                self.game_occ_2_plot_file.write(f"{y} {self.game_occ_plot_time_counter}\n")
+            self.game_occ_plot_time_counter += 1
+
+    def list_overlap_len(self, l1, l2):
+        def list_overlap_len_rec(l1, l2, rel_last_idx):
+            
+            if rel_last_idx <= len(l2) - 1:
+                l1_slice = l1[-(rel_last_idx + 1):]
+                l2_slice = l2[:rel_last_idx + 1]
+            elif rel_last_idx <= len(l1) - 1:
+                l1_slice = l1[-(rel_last_idx + 1) : -(rel_last_idx + 1) + len(l2)]
+                l2_slice = l2
+            elif rel_last_idx <= len(l1) + len(l2) - 1:
+                left_spill = rel_last_idx - len(l1) + 1
+                slice_len = len(l2) - left_spill
+                l1_slice = l1[:slice_len]
+                l2_slice = l2[left_spill:]
+            else:
+                return 0
+            
+            if l1_slice == l2_slice:
+                return len(l1_slice) 
+            else:
+                list_overlap_len_rec(l1, l2, rel_last_idx + 1)
+
+        if len(l1) < len(l2):
+            aux = l1
+            l1 = l2
+            l2 = aux
+            
+        return list_overlap_len_rec(l1,l2,0)
 
     def calculate_steps_needed(self, paddle, x_pred):
         """
@@ -325,88 +378,361 @@ class Game:
 
 
     class FlickerWindow:
-        def __init__(self, period = 1):
+        def __init__(self, flicker_on=True,
+                           period=2,          flicker_on_period=None,
+                           left_period=None,  left_flicker_on_period=None,
+                           right_period=None, right_flicker_on_period=None):
+            # Focus cross
             self.cross_width = 20
             self.cross_height = 120
-            
             self.cross_x = WIN_WIDTH / 2 - self.cross_width / 2 - 1
             self.cross_y = WIN_HEIGHT / 2 - self.cross_height / 2 - 1
-            # self.cross_y = WIN_HEIGHT * 55 / 100 - self.cross_height / 2 - 1
-
             self.horizontal_x = self.cross_x - (self.cross_height / 2 - self.cross_width / 2)
             self.horizontal_y = self.cross_y + (self.cross_height / 2 - self.cross_width / 2)
             self.horizontal_width = self.cross_height
             self.horizontal_height = self.cross_width
+            self.CROSS_COLOR = "grey"
 
+            # Flickering patches
+            self.cross_flicker_distance = 120
             self.flicker_width = 121
             self.flicker_height = 121
-            self.cross_flicker_distance = 120
-
-            self.CROSS_COLOR = "grey"
-            
             self.flicker_left_x = self.horizontal_x - self.flicker_width - self.cross_flicker_distance
             self.flicker_right_x = self.horizontal_x + self.horizontal_width + self.cross_flicker_distance
             self.flicker_y = self.cross_y
 
+            self.FLICKER_TEST_COLOR_BG = "white" # "ghostwhite"
+            self.FLICKER_TEST_COLOR_PULSE = "black" # "floralwhite"
+
+            # Instruction arrows
             self.arrow_body_width = 120
             self.arrow_body_height = 90
-
             self.arrow_tip_width = 30
             self.arrow_tip_height = 150
+            self.ARROW_COLOR = "black"
 
             # Right-pointing arrow
             self.arrow_body_x_right = WIN_WIDTH / 2 - self.arrow_body_width / 2 - self.arrow_tip_width / 2
             self.arrow_body_y_right = WIN_HEIGHT / 2 - self.arrow_body_height / 2
-
             self.arrow_tip_x1_right = self.arrow_body_x_right + self.arrow_body_width
             self.arrow_tip_y1_right = WIN_HEIGHT / 2 - self.arrow_tip_height / 2
-            
             self.arrow_tip_x2_right = self.arrow_body_x_right + self.arrow_body_width
             self.arrow_tip_y2_right = WIN_HEIGHT / 2 + self.arrow_tip_height / 2
-            
             self.arrow_tip_x3_right = self.arrow_body_x_right + self.arrow_body_width + self.arrow_tip_width
             self.arrow_tip_y3_right = WIN_HEIGHT / 2
 
             # Left-pointing arrow
             self.arrow_body_x_left = WIN_WIDTH / 2 - self.arrow_body_width / 2 + self.arrow_tip_width / 2
             self.arrow_body_y_left = WIN_HEIGHT / 2 - self.arrow_body_height / 2
-
             self.arrow_tip_x1_left = self.arrow_body_x_left
             self.arrow_tip_y1_left = WIN_HEIGHT / 2 - self.arrow_tip_height / 2
-            
             self.arrow_tip_x2_left = self.arrow_body_x_left
             self.arrow_tip_y2_left = WIN_HEIGHT / 2 + self.arrow_tip_height / 2
-            
             self.arrow_tip_x3_left = self.arrow_body_x_left - self.arrow_tip_width
             self.arrow_tip_y3_left = WIN_HEIGHT / 2
 
-            self.ARROW_COLOR = "black"
-
-            self.FLICKER_TEST_COLOR_BG = "white"
-            self.FLICKER_TEST_COLOR_PULSE = "grey"
-
-            self.period = period
-            self.flicker_count = 0
-
-            # Test timer variables
-            self.instruction_period_secs = 7
-            self.instruction_period_fps = FPS * self.instruction_period_secs
-            self.contdown_secs = 3
-            self.contdown_fps = FPS * self.contdown_secs
-            self.single_test_period_secs = 30
-            self.single_test_period_fps = FPS * self.single_test_period_secs
-            self.test_halt_secs = 3
-            self.test_halt_fps = FPS * self.test_halt_secs
-
+            # General test timing
             self.test_timer_fps = 0
 
-            self.direction = 0 # 0 - right, 1 - left
+            # i. Basic test
+            self.basic_countdown_secs = 5
+            self.basic_countdown_fps = FPS * self.basic_countdown_secs
+            self.basic_test_period_secs = 60
+            self.basic_test_period_fps = FPS * self.basic_test_period_secs
 
+            self.basic_flicker = flicker_on
+            
+            self.central_flicker = False
+            self.left_flicker = False
+            self.right_flicker = False
+
+            if left_period or right_period:
+                if left_period:
+                    self.left_flicker = True
+                    self.left_sided_flicker = True
+                    self.left_period = left_period
+                    self.left_flicker_on_period = left_flicker_on_period
+                    self.left_flicker_count = 1
+
+                if right_period:
+                    self.right_flicker = True
+                    self.right_sided_flicker = True
+                    self.right_period = right_period
+                    self.right_flicker_on_period = right_flicker_on_period
+                    self.right_flicker_count = 1
+            else:
+                self.central_flicker = True
+                self.period = period
+                if flicker_on_period:
+                    self.flicker_on_period = flicker_on_period
+                else:
+                    self.flicker_on_period = self.period // 2
+                self.flicker_count = 1
+
+            self.basic_patch_width = 120
+            self.basic_patch_height = 120
+            self.basic_patch_x = WIN_WIDTH / 2 - self.basic_patch_width / 2 - 1
+            self.basic_patch_y = WIN_HEIGHT / 2 - self.basic_patch_height / 2 - 1
+
+            # ii. Complete test
+            self.countdown_secs = 1
+            self.countdown_fps = FPS * self.countdown_secs
+            self.single_test_period_secs = 2
+            self.single_test_period_fps = FPS * self.single_test_period_secs
+
+            # Instruction text fonts
             self.FLICKER_FONT = pygame.font.SysFont("calibri", 30)
             self.TEST_END_FONT = pygame.font.SysFont("calibri", 50)
 
+            # Flicker activation and location
+            self.is_flickering = flicker_on
+            self.flicker_location = 0 # 0 - right, 1 - left
+            self.is_testing = False
+
+            # Statistics logging
+            flicker_log_file_name = "../logs/flicker.log"
+            os.makedirs(os.path.dirname(flicker_log_file_name), exist_ok=True)
+            self.flicker_log_file = open(flicker_log_file_name, 'w')
+
+            self.test_no = 0
+            self.no_of_tests = 15
+            self.has_signaled_flicker_start = False
+            self.test_log = dict()
+            for t in range(self.no_of_tests):
+                self.test_log[t] = {'test_side': None, 'left': 0, 'right': 0, 'indet': 0}
+            self.average_correct_activations_percentage = 0
+            self.average_incorrect_activations_percentage = 0
+            self.average_indet_activations_percentage = 0
+
+            # Logging
+            if self.basic_flicker:
+                occ_1_plot_file_name = "../plots/occ_1_basic_flicker.txt"
+                occ_2_plot_file_name = "../plots/occ_2_basic_flicker.txt"
+                occ_1_data_file_name = "../plots/occ_1_basic_flicker_data.txt"
+                occ_2_data_file_name = "../plots/occ_2_basic_flicker_data.txt"
+            else:
+                occ_1_plot_file_name = "../plots/occ_1_basic_no_flicker.txt"
+                occ_2_plot_file_name = "../plots/occ_2_basic_no_flicker.txt"
+                occ_1_data_file_name = "../plots/occ_1_basic_no_flicker_data.txt"
+                occ_2_data_file_name = "../plots/occ_2_basic_no_flicker_data.txt"
+
+            os.makedirs(os.path.dirname(occ_1_plot_file_name), exist_ok=True)
+            os.makedirs(os.path.dirname(occ_2_plot_file_name), exist_ok=True)
+            os.makedirs(os.path.dirname(occ_1_data_file_name), exist_ok=True)
+            os.makedirs(os.path.dirname(occ_2_data_file_name), exist_ok=True)
+
+            self.occ_1_plot_file = open(occ_1_plot_file_name, 'w')
+            self.occ_2_plot_file = open(occ_2_plot_file_name, 'w')
+            self.occ_1_data_file = open(occ_1_data_file_name, 'w')
+            self.occ_2_data_file = open(occ_2_data_file_name, 'w')
+
+            self.occ_1_plot_time_point = 0
+            self.occ_2_plot_time_point = 0
+
+            self.write_plot_data_at_end = True
+            if self.write_plot_data_at_end:
+                self.occ_1_plot_points = []
+                self.occ_2_plot_points = []
+
+            # File cleanup
+            atexit.register(self.cleanup)
+
+        def cleanup(self):
+            if self.write_plot_data_at_end:
+                self.empty_logging_queue()
+            self.flicker_log_file.close()
+            self.occ_1_plot_file.close()
+            self.occ_2_plot_file.close()
+
+            # Logging the sample rate for the FFT in the data log file
+            self.occ_1_data_file.write(f"{SAMPLE_FREQ}")
+            self.occ_2_data_file.write(f"{SAMPLE_FREQ}")
+
+            self.occ_1_data_file.close()
+            self.occ_2_data_file.close()
+
+        def get_testing_state(self):
+            return self.is_testing
+        
+        def get_flickering_state(self):
+            return self.is_flickering
+
+        def get_flicker_location_string(self):
+            if self.flicker_location == 0:
+                return "right"
+            else:
+                return "left"
+        
+        def is_flicker_central(self):
+            return self.central_flicker
+        
+        def get_flicker_location(self):
+            if self.central_flicker:
+                return 'center'
+            if self.left_flicker and self.right_flicker:
+                return 'left-right'
+            if self.left_flicker:
+                return 'left'
+            if self.right_flicker:
+                return 'right'
+
+        def get_flicker_frequency(self):
+            # It's whole division in order to keep the reduction factor divisible by new_window_size, a.k.a. 4
+            return FPS // self.period
+        
+        def get_left_flicker_frequency(self):
+            # It's whole division in order to keep the reduction factor divisible by new_window_size, a.k.a. 4
+            if self.left_flicker:
+                return FPS // self.left_period
+            else:
+                return None
+        
+        def get_right_flicker_frequency(self):
+            # It's whole division in order to keep the reduction factor divisible by new_window_size, a.k.a. 4
+            if self.right_flicker:
+                return FPS // self.right_period
+            else:
+                return None
+
+        def log_threshold_crossing(self, delta, side):
+            # self.flicker_log_file.write(f"{self.test_no}: Threshold crossed by {delta} in the {side} hs\n")
+            self.test_log[self.test_no][side] += 1 # just counting the # of activations per side for now
+        
+        def log_indeterminate_diff(self):
+            self.test_log[self.test_no]['indet'] += 1
+
+        # def log_error(self):
+        #     self.flicker_log_file.write(f"Avg difference was >= in the wrong hs\n")
+            
+        def log_plot_data(self, amp, hs):
+            if self.write_plot_data_at_end:
+                if hs == 'occ_1':
+                    self.occ_1_plot_points.append((amp, self.occ_1_plot_time_point))
+                    self.occ_1_plot_time_point += 1
+                elif hs == 'occ_2':
+                    self.occ_2_plot_points.append((amp, self.occ_2_plot_time_point))
+                    self.occ_2_plot_time_point += 1
+            else:
+                if hs == 'occ_1':
+                    self.occ_1_plot_file.write(f"{amp} {self.occ_1_plot_time_point}\n")
+                    self.occ_1_plot_time_point += 1
+                elif hs == 'occ_2':
+                    self.occ_2_plot_file.write(f"{amp} {self.occ_2_plot_time_point}\n")
+                    self.occ_2_plot_time_point += 1
+
+        def log_data(self, buff, hs):
+            if hs == 'occ_1':
+                for dp in buff:
+                    self.occ_1_data_file.write(str(dp) + " ")
+                self.occ_1_data_file.write("\n")
+            elif hs == 'occ_2':
+                for dp in buff:
+                    self.occ_2_data_file.write(str(dp) + " ")
+                self.occ_2_data_file.write("\n")
+
+        def empty_logging_queue(self):
+            # self.linearly_regress_plot_data()
+            for (amp,t) in self.occ_1_plot_points:
+                self.occ_1_plot_file.write(f"{amp} {t}\n")
+            for (amp,t) in self.occ_2_plot_points:
+                self.occ_2_plot_file.write(f"{amp} {t}\n")
+            # self.transfrom_into_freq_plot()
+            # for (y1,y2,x) in zip(self.yf_occ_1, self.yf_occ_2, self.xf):
+            #     self.occ_1_plot_file.write(f"{y1} {x}\n")
+            #     self.occ_2_plot_file.write(f"{y2} {x}\n")
+
+        # def transfrom_into_freq_plot(self):
+        #     SAMPLE_RATE = SAMPLE_FREQ // (self.period * 2)
+        #     N = SAMPLE_RATE * self.basic_test_period_secs
+            
+        #     self.occ_1_plot_points = list(map(lambda t: t[1], self.occ_1_plot_points))
+        #     self.occ_2_plot_points = list(map(lambda t: t[1], self.occ_2_plot_points))
+
+        #     self.xf = rfftfreq(N, 1 / SAMPLE_RATE)
+        #     self.yf_occ_1 = rfft(self.occ_1_plot_points)
+        #     self.yf_occ_2 = rfft(self.occ_2_plot_points)
+
+        #     self.yf_occ_1 = np.abs(self.yf_occ_1)
+        #     self.yf_occ_2 = np.abs(self.yf_occ_2)
+
+        def linearly_regress_plot_data(self):
+            ys_occ_1_amps = list(map(lambda t: t[0], self.occ_1_plot_points))
+            ys_occ_2_amps = list(map(lambda t: t[0], self.occ_2_plot_points))
+            no_of_data_points = len(ys_occ_1_amps)
+            xs_flicker = np.arange(0, no_of_data_points).tolist()
+            
+            reg1_flicker = LinearRegression(fit_intercept=True)
+            reg2_flicker = LinearRegression(fit_intercept=True)
+            reg1_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_occ_1_amps))
+            reg2_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_occ_2_amps))
+
+            for t in range(no_of_data_points):
+                ys_occ_1_amps_curr_drift = reg1_flicker.coef_[0] * (no_of_data_points - t)
+                ys_occ_2_amps_curr_drift = reg2_flicker.coef_[0] * (no_of_data_points - t)
+
+                ys_occ_1_amps[t] = ys_occ_1_amps[t] + ys_occ_1_amps_curr_drift - reg1_flicker.intercept_
+                ys_occ_2_amps[t] = ys_occ_2_amps[t] + ys_occ_2_amps_curr_drift - reg2_flicker.intercept_
+                
+            self.occ_1_plot_points = list(zip(ys_occ_1_amps, xs_flicker))
+            self.occ_2_plot_points = list(zip(ys_occ_2_amps, xs_flicker))
+
+        def analyze_test_run(self, test):
+            side = self.test_log[test]['side']
+            left_activations = self.test_log[test]['left']
+            right_activations = self.test_log[test]['right']
+            indet_activations = self.test_log[test]['indet']
+
+            total_activations = left_activations + right_activations + indet_activations
+            left_activations_percentage = left_activations / total_activations
+            right_activations_percentage = right_activations / total_activations
+            indet_activations_percentage = indet_activations / total_activations
+            
+            if side == 'left':
+                correct_activations_percentage = left_activations_percentage
+                incorrect_activations_percentage = right_activations_percentage
+            else:
+                correct_activations_percentage = right_activations_percentage
+                incorrect_activations_percentage = left_activations_percentage
+            
+            self.average_correct_activations_percentage += correct_activations_percentage
+            self.average_incorrect_activations_percentage += incorrect_activations_percentage
+            self.average_indet_activations_percentage += indet_activations_percentage
+
+            self.flicker_log_file.write(f"Test #{test+1} ({side}):\n"
+                                        + f"\tcorrect: {correct_activations_percentage:.2f}\n"
+                                        + f"\tincorrect: {incorrect_activations_percentage:.2f}\n"
+                                        + f"\tindeterminate: {indet_activations_percentage:.2f}\n"
+                                        + f"\ttotal # of activations: {total_activations:.2f}\n\n")
+
+        def analyze_tests(self):
+            """
+            TODO:
+            - record data per test
+                - % of correct lobe activation - done
+                - % of incorrect lobe activation - done
+                - % of indeterminate lobe activation - done
+                - average difference between the two activation amplitudes
+            - aggregate all test data
+                - average % of correct lobe activation - done
+                - highest % of correct lobe activation (+ associated test)
+                - average % of incorrect lobe activation - done
+                - highest % of incorrect lobe activation (+ associated test)
+                - average % of indeterminate lobe activation - done
+                - overall average difference between the two activation amplitudes
+                - greatest difference (+ associated test)
+            """
+            for test in range(self.no_of_tests):
+                self.analyze_test_run(test)
+            
+            self.average_correct_activations_percentage = self.average_correct_activations_percentage / self.no_of_tests
+            self.average_incorrect_activations_percentage = self.average_incorrect_activations_percentage / self.no_of_tests
+            self.average_indet_activations_percentage = self.average_indet_activations_percentage / self.no_of_tests
+            self.flicker_log_file.write(f"Total % of correct hs activation: {self.average_correct_activations_percentage:.2f}\n"
+                                        + f"Total % of incorrect hs activation: {self.average_incorrect_activations_percentage:.2f}\n"
+                                        + f"Total % of indeterminate activation: {self.average_indet_activations_percentage:.2f}\n")
+
         def draw_arrow(self, win):
-            if self.direction == 0:
+            if self.flicker_location == 0:
                 pygame.draw.rect(win, self.ARROW_COLOR,
                                 (self.arrow_body_x_right, self.arrow_body_y_right,
                                 self.arrow_body_width, self.arrow_body_height))
@@ -423,44 +749,155 @@ class Game:
                                     (self.arrow_tip_x2_left, self.arrow_tip_y2_left),
                                     (self.arrow_tip_x3_left, self.arrow_tip_y3_left)])
 
-        def draw_flicker_test_window_complete(self, win):
+        def draw_basic_test_window(self, win):
             """
-            Draw method for the complete flicker test
+            Draw method for the basic (central flicker/blank screen) 60 second test
             """
             win.fill(self.FLICKER_TEST_COLOR_BG)
 
-            # There are 4 stages to the test
+            # Stage 1: Countdown and instruction
+            if self.test_timer_fps < self.basic_countdown_fps:
+                if self.central_flicker:
+                    instr_text = self.FLICKER_FONT.render("Focus on the center of the screen for " +
+                                                        f"{self.basic_test_period_secs} seconds",
+                                                        1, "black")
+                elif self.left_flicker and self.right_flicker:
+                    instr_text = self.FLICKER_FONT.render("Focus covertly on the left and right sides of the screen for " +
+                                                        f"{self.basic_test_period_secs} seconds",
+                                                        1, "black")
+                elif self.left_flicker:
+                    instr_text = self.FLICKER_FONT.render("Focus covertly on the left side of the screen for " +
+                                                        f"{self.basic_test_period_secs} seconds",
+                                                        1, "black")
+                elif self.right_flicker:
+                    instr_text = self.FLICKER_FONT.render("Focus covertly on the right side of the screen for " +
+                                                        f"{self.basic_test_period_secs} seconds",
+                                                        1, "black")
+                    
+                win.blit(instr_text, (WIN_WIDTH / 2 - instr_text.get_width() / 2,
+                                      WIN_HEIGHT / 4))
+                self.test_timer_fps += 1
 
-            # Stage 1: Instructing the user
-            if self.test_timer_fps < self.instruction_period_fps:
-                if self.direction == 0:
+            # Stage 2: Actual test
+            elif self.test_timer_fps < self.basic_test_period_fps:
+                if not(self.has_signaled_flicker_start):
+                    self.has_signaled_flicker_start = True
+                
+                if self.basic_flicker == True:
+                    # TODO: do different counts for the left and right flickers, if necessary
+                    if self.left_flicker or self.right_flicker:
+                        if self.left_flicker:
+                            if self.left_flicker_count <= self.left_flicker_on_period:
+                                left_color = self.FLICKER_TEST_COLOR_BG
+                            else:
+                                left_color = self.FLICKER_TEST_COLOR_PULSE
+                                
+                            if self.left_flicker_count == self.left_period:
+                                self.left_flicker_count = 1
+                            else:
+                                self.left_flicker_count += 1
+                        
+                        if self.right_flicker:
+                            if self.right_flicker_count <= self.right_flicker_on_period:
+                                right_color = self.FLICKER_TEST_COLOR_BG
+                            else:
+                                right_color = self.FLICKER_TEST_COLOR_PULSE
+                                
+                            if self.right_flicker_count == self.right_period:
+                                self.right_flicker_count = 1
+                            else:
+                                self.right_flicker_count += 1
+                    else:
+                        if self.flicker_count <= self.flicker_on_period:
+                            color = self.FLICKER_TEST_COLOR_BG
+                        else:
+                            color = self.FLICKER_TEST_COLOR_PULSE
+
+                        if self.flicker_count == self.period:
+                            self.flicker_count = 1
+                        else:
+                            self.flicker_count += 1
+
+                    self.is_flickering = True
+                    self.is_testing = True
+                else:
+                    color = self.CROSS_COLOR
+                    self.is_testing = True
+                
+                if self.left_flicker or self.right_flicker:
+                    # Focus cross is added when the flicker is to the side
+                    pygame.draw.rect(win, self.CROSS_COLOR,
+                                    (self.cross_x, self.cross_y,
+                                    self.cross_width, self.cross_height))
+                    pygame.draw.rect(win, self.CROSS_COLOR,
+                                    (self.horizontal_x, self.horizontal_y,
+                                    self.horizontal_width, self.horizontal_height))
+                    
+                    if self.left_flicker:
+                        pygame.draw.rect(win, left_color,
+                                        (self.flicker_left_x, self.flicker_y,
+                                        self.flicker_width, self.flicker_height))
+                        
+                    if self.right_flicker:
+                        pygame.draw.rect(win, right_color,
+                                        (self.flicker_right_x, self.flicker_y,
+                                        self.flicker_width, self.flicker_height))                                        
+                else:
+                    pygame.draw.rect(win, color,
+                                    (self.basic_patch_x, self.basic_patch_y,
+                                    self.basic_patch_width, self.basic_patch_height))
+                self.test_timer_fps += 1
+            
+            # Stage 3: Test end
+            else:
+                instr_text = self.FLICKER_FONT.render(f"The test is over", 1, "black")
+                win.blit(instr_text, (WIN_WIDTH / 2 - instr_text.get_width() / 2,
+                                      WIN_HEIGHT / 4))
+                self.is_flickering = False
+                self.is_testing = False
+
+                pygame.display.update()
+                return 0
+            
+            pygame.display.update()
+            return 1
+
+        def draw_flicker_test_window(self, win):
+            """
+            Draw method for the flicker test
+            """
+            win.fill(self.FLICKER_TEST_COLOR_BG)
+
+            if self.test_no == self.no_of_tests:
+                end_text = self.FLICKER_FONT.render("Testing has ended", 1, "black")
+                win.blit(end_text, (WIN_WIDTH / 2 - end_text.get_width() / 2,
+                                    WIN_HEIGHT / 4))
+                pygame.display.update()
+                return 0
+
+            # Stage 1: Instructing the user in-between tests
+            if self.test_timer_fps < self.countdown_secs:
+                if self.flicker_location == 0:
                     dir_text = "right"
+                    self.test_log[self.test_no]['side'] = "right"
                 else:
                     dir_text = "left"
-                instr_text = self.FLICKER_FONT.render(f"Next up, focus on the {dir_text} side of the screen", 1, "black")
+                    self.test_log[self.test_no]['side'] = "left"
+
+                instr_text = self.FLICKER_FONT.render(f"({self.test_no + 1})" +
+                                                      f"Shift your focus to the {dir_text} side of the screen", 1, "black")
                 win.blit(instr_text, (WIN_WIDTH / 2 - instr_text.get_width() / 2,
                                       WIN_HEIGHT / 4))
                 self.draw_arrow(win)
                 self.test_timer_fps += 1
 
-            # Stage 2: Countdown to the flicker test
-            elif self.test_timer_fps < self.instruction_period_fps + self.contdown_fps:
-                if self.test_timer_fps < self.instruction_period_fps + self.contdown_fps / 3:
-                    countdown_text = self.FLICKER_FONT.render("3", 1, "black")
-                elif self.test_timer_fps < self.instruction_period_fps + self.contdown_fps * 2 / 3:
-                    countdown_text = self.FLICKER_FONT.render("2", 1, "black")
-                else:
-                    countdown_text = self.FLICKER_FONT.render("1", 1, "black")
+            # Stage 2: The flicker test itself
+            elif self.test_timer_fps < self.countdown_secs + self.single_test_period_fps:
+                # Logging
+                if not(self.has_signaled_flicker_start):
+                    # self.flicker_log_file.write(f"{self.test_no}: Flickering begins ({self.get_flicker_location_string()})\n")
+                    self.has_signaled_flicker_start = True
 
-                win.blit(countdown_text, (WIN_WIDTH / 2 - countdown_text.get_width() / 2,
-                                          WIN_HEIGHT / 4))
-                self.draw_arrow(win)
-                self.test_timer_fps += 1
-
-            # Stage 3: The flicker test itself
-            elif self.test_timer_fps < self.instruction_period_fps +    \
-                                       self.contdown_fps +              \
-                                       self.single_test_period_fps:
                 # Focus cross
                 pygame.draw.rect(win, self.CROSS_COLOR,
                                 (self.cross_x, self.cross_y,
@@ -470,72 +907,125 @@ class Game:
                                  self.horizontal_width, self.horizontal_height))
 
                 # Flickering patches
-                if self.flicker_count <= self.period // 2:
+                if self.flicker_count <= self.flicker_on_period:
                     color = self.FLICKER_TEST_COLOR_BG
                 else:
                     color = self.FLICKER_TEST_COLOR_PULSE
+
                 if self.flicker_count == self.period:
-                    self.flicker_count = 0
+                    self.flicker_count = 1
                 else:
                     self.flicker_count += 1
 
                 pygame.draw.rect(win, color,
                                 (self.flicker_left_x, self.flicker_y,
-                                 self.flicker_width, self.flicker_height))
+                                self.flicker_width, self.flicker_height))
                 pygame.draw.rect(win, color,
                                 (self.flicker_right_x, self.flicker_y,
-                                 self.flicker_width, self.flicker_height))
+                                self.flicker_width, self.flicker_height))
                 
+                self.is_flickering = True
+                self.is_testing = True
                 self.test_timer_fps += 1
+
+            # Setting back the timer
+            else:
+                # Logging
+                # self.flicker_log_file.write(f"{self.test_no}: Flickering stops ({self.get_flicker_location_string()})\n\n")
+                self.has_signaled_flicker_start = False
+
+                self.is_flickering = False
+                self.is_testing = False
+                self.test_timer_fps = 0
+                self.flicker_location = 1 - self.flicker_location
+                self.test_no += 1
+                if self.test_no == self.no_of_tests:
+                    self.analyze_tests()
+                    # self.flicker_log_file.write("Testing done")
+
+            pygame.display.update()
+            return 1
+
+        # def draw_flicker_test_window_complete(self, win):
+        #     """
+        #     Draw method for the complete flicker test
+        #     """
+        #     win.fill(self.FLICKER_TEST_COLOR_BG)
+
+        #     # There are 4 stages to the test
+
+        #     # Stage 1: Instructing the user
+        #     if self.test_timer_fps < self.instruction_period_fps:
+        #         if self.direction == 0:
+        #             dir_text = "right"
+        #         else:
+        #             dir_text = "left"
+        #         instr_text = self.FLICKER_FONT.render(f"Next up, focus on the {dir_text} side of the screen", 1, "black")
+        #         win.blit(instr_text, (WIN_WIDTH / 2 - instr_text.get_width() / 2,
+        #                               WIN_HEIGHT / 4))
+        #         self.draw_arrow(win)
+        #         self.test_timer_fps += 1
+
+        #     # Stage 2: Countdown to the flicker test
+        #     elif self.test_timer_fps < self.instruction_period_fps + self.countdown_secs:
+        #         if self.test_timer_fps < self.instruction_period_fps + self.countdown_secs / 3:
+        #             countdown_text = self.FLICKER_FONT.render("3", 1, "black")
+        #         elif self.test_timer_fps < self.instruction_period_fps + self.countdown_secs * 2 / 3:
+        #             countdown_text = self.FLICKER_FONT.render("2", 1, "black")
+        #         else:
+        #             countdown_text = self.FLICKER_FONT.render("1", 1, "black")
+
+        #         win.blit(countdown_text, (WIN_WIDTH / 2 - countdown_text.get_width() / 2,
+        #                                   WIN_HEIGHT / 4))
+        #         self.draw_arrow(win)
+        #         self.test_timer_fps += 1
+
+        #     # Stage 3: The flicker test itself
+        #     elif self.test_timer_fps < self.instruction_period_fps +    \
+        #                                self.countdown_secs +              \
+        #                                self.single_test_period_fps:
+        #         # Focus cross
+        #         pygame.draw.rect(win, self.CROSS_COLOR,
+        #                         (self.cross_x, self.cross_y,
+        #                          self.cross_width, self.cross_height))
+        #         pygame.draw.rect(win, self.CROSS_COLOR,
+        #                         (self.horizontal_x, self.horizontal_y,
+        #                          self.horizontal_width, self.horizontal_height))
+
+        #         # Flickering patches
+        #         if self.flicker_count <= self.period // 2:
+        #             color = self.FLICKER_TEST_COLOR_BG
+        #         else:
+        #             color = self.FLICKER_TEST_COLOR_PULSE
+        #         if self.flicker_count == self.period:
+        #             self.flicker_count = 0
+        #         else:
+        #             self.flicker_count += 1
+
+        #         pygame.draw.rect(win, color,
+        #                         (self.flicker_left_x, self.flicker_y,
+        #                          self.flicker_width, self.flicker_height))
+        #         pygame.draw.rect(win, color,
+        #                         (self.flicker_right_x, self.flicker_y,
+        #                          self.flicker_width, self.flicker_height))
+                
+        #         self.test_timer_fps += 1
             
-            # Stage 4: Post-test cooldown period
-            else:
-                if self.test_timer_fps == self.instruction_period_fps +    \
-                                          self.contdown_fps +              \
-                                          self.single_test_period_fps +    \
-                                          self.test_halt_fps:
-                    self.test_timer_fps = 0
-                    self.direction = 1 - self.direction
-                else:
-                    test_end_text = self.TEST_END_FONT.render(f"Test end", 1, "black")
-                    win.blit(test_end_text, (WIN_WIDTH / 2 - test_end_text.get_width() / 2,
-                                             WIN_HEIGHT / 4))
-                    self.test_timer_fps += 1
+        #     # Stage 4: Post-test cooldown period
+        #     else:
+        #         if self.test_timer_fps == self.instruction_period_fps +    \
+        #                                   self.countdown_secs +              \
+        #                                   self.single_test_period_fps +    \
+        #                                   self.test_halt_fps:
+        #             self.test_timer_fps = 0
+        #             self.direction = 1 - self.direction
+        #         else:
+        #             test_end_text = self.TEST_END_FONT.render(f"Test end", 1, "black")
+        #             win.blit(test_end_text, (WIN_WIDTH / 2 - test_end_text.get_width() / 2,
+        #                                      WIN_HEIGHT / 4))
+        #             self.test_timer_fps += 1
 
-            pygame.display.update()
-
-        def draw_flicker_test_window(self, win):
-            """
-            Draw method for the flicker test
-            """
-            win.fill(self.FLICKER_TEST_COLOR_BG)
-
-            # Focus cross
-            pygame.draw.rect(win, self.CROSS_COLOR,
-                             (self.cross_x, self.cross_y,
-                              self.cross_width, self.cross_height))
-            pygame.draw.rect(win, self.CROSS_COLOR,
-                             (self.horizontal_x, self.horizontal_y,
-                              self.horizontal_width, self.horizontal_height))
-
-            # Flickering patches
-            if self.flicker_count <= self.period // 2:
-                color = self.FLICKER_TEST_COLOR_BG
-            else:
-                color = self.FLICKER_TEST_COLOR_PULSE
-            if self.flicker_count == self.period:
-                self.flicker_count = 0
-            else:
-                self.flicker_count += 1
-
-            pygame.draw.rect(win, color,
-                             (self.flicker_left_x, self.flicker_y,
-                              self.flicker_width, self.flicker_height))
-            pygame.draw.rect(win, color,
-                             (self.flicker_right_x, self.flicker_y,
-                              self.flicker_width, self.flicker_height))
-
-            pygame.display.update()
+        #     pygame.display.update()
 
 
     def draw(self, win, paddle, ball, bricks, gauge, lives, direction, period):
@@ -691,21 +1181,76 @@ class Game:
         clock = pygame.time.Clock()
         mySensor = self.EEGSensor
         
-        
         paddle_x = self.WIDTH / 2 - self.PADDLE_WIDTH / 2
         paddle_y = self.HEIGHT - self.PADDLE_HEIGHT - 5
         paddle = self.Paddle(paddle_x, paddle_y, self.PADDLE_WIDTH, self.PADDLE_HEIGHT, "red")
         ball = self.Ball(self.WIDTH / 2, paddle_y - self.BALL_RADIUS, self.BALL_RADIUS, "black", 8)
         gauge = self.Gauge(font=self.GAUGE_FONT, x=90, y=150, thickness=20, radius=60, arc_color=(0, 0, 0))
-        #                            Originally: x:90  y:WIN_HEIGHT - 120                           #
-        flicker_window = self.FlickerWindow(period=1)
+        #                            Originally: x:90  y:WIN_HEIGHT - 120                           
+
+        # TODO: Change the FlickerWindow object instantiation so that there is only one period and flicker_on option
+        flicker_window = self.FlickerWindow(flicker_on=True, left_period=2, left_flicker_on_period=1)
+        #                                   period=2 - 1 flicker color change every frame,
+        #                                              2 frame flicker period,
+        #                                              30 Hz
+        #                                   period=4 - 1 flicker color change every 2 frames,
+        #                                              4 frame flicker period,
+        #                                              15 Hz
+        
+        if flicker_window.get_flicker_location() == 'center':
+            reduction_factor_full = SAMPLE_FREQ / flicker_window.get_flicker_frequency()
+
+            # reduction_factor_int is a multiple of new_data_window_size, since the flicker frequency is a submultiple of FPS
+            reduction_factor_int = SAMPLE_FREQ // flicker_window.get_flicker_frequency()
+
+            reduction_factor_error = reduction_factor_full - reduction_factor_int
+            error_recovery_threshold = np.rint(1 / reduction_factor_error)
+
+            # TODO: Handle the case when error_recovery_threshold has a fractional part
+            # error_recovery_threshold_frac = np.modf(error_recovery_threshold)[0]
+            # if error_recovery_threshold_frac:
+            #     mult_factor = 1 / error_recovery_threshold_frac
+            #     error_recovery_threshold = np.rint(mult_factor * error_recovery_threshold)
+
+            error_recovery_counter = 0
+
+            # Debugging - TODO: remove
+            # print(f"flicker period: {flicker_window.period}")
+            # print(f"flicker frequency: {flicker_window.get_flicker_frequency()}")
+            # print(f"reduction_factor_full: {reduction_factor_full}")
+            # print(f"reduction_factor_int: {reduction_factor_int}")
+            # print(f"reduction_factor_error: {reduction_factor_error}")
+            # print(f"error_recovery_threshold: {error_recovery_threshold}")
+
+        else:
+            # We need the contralateral lobe for each flicker, so:
+            #   Occ. lobe 1 (left) for the right-sided flicker
+            #   Occ. lobe 2 (right) for the left-sided flicker
+            
+            if 'right' in flicker_window.get_flicker_location():
+                reduction_factor_full_left = SAMPLE_FREQ / flicker_window.get_right_flicker_frequency()
+
+                # reduction_factor_int is a multiple of new_data_window_size, since the flicker frequency is a submultiple of FPS
+                reduction_factor_int_left = SAMPLE_FREQ // flicker_window.get_right_flicker_frequency()
+                
+                reduction_factor_error_left = reduction_factor_full_left - reduction_factor_int_left
+                error_recovery_threshold_left = np.rint(1 / reduction_factor_error_left)
+                
+                error_recovery_counter_left = 0
+
+            if 'left' in flicker_window.get_flicker_location():
+                reduction_factor_full_right = SAMPLE_FREQ / flicker_window.get_left_flicker_frequency()
+
+                # reduction_factor_int is a multiple of new_data_window_size, since the flicker frequency is a submultiple of FPS
+                reduction_factor_int_right = SAMPLE_FREQ // flicker_window.get_left_flicker_frequency()
+                
+                reduction_factor_error_right = reduction_factor_full_right - reduction_factor_int_right
+                error_recovery_threshold_right = np.rint(1 / reduction_factor_error_right)
+                
+                error_recovery_counter_right = 0
 
         bricks = self.generate_bricks(1, 10)
         lives = MAX_LIVES
-
-        # graph_step = 100
-        # current_graph_iterations = 0
-        # graph_x, graph_y = (0,0)
 
         def reset():
             paddle.x = paddle_x
@@ -721,7 +1266,7 @@ class Game:
             pygame.display.update()
             pygame.time.delay(3000)
 
-        # Initializating the EEG data variables for blinking detection:
+        # Initializating the EEG variables for blinking detection:
         xs = np.arange(0,100).tolist()
         ys = [list(), list(), list(), list()]
         ys1_last = [0] * 100
@@ -735,14 +1280,28 @@ class Game:
         blinked_bool = 0
         blinked_count = 0
 
-        # Initializating the EEG data variables for flicker-induced SSVEP detection:
-        window_size = 250
-        xs_flicker = np.arange(0, window_size).tolist()
-        ys_flicker = [list(), list(), list(), list()]
-        ys1_flicker = [0] * window_size # The sample frequency of the BrainBit headband is 250Hz
-        ys2_flicker = [0] * window_size
-        ys3_flicker = [0] * window_size
-        ys4_flicker = [0] * window_size
+        # Initializating the EEG variables for flicker-induced SSVEP detection:
+        new_data_window_size = SAMPLE_FREQ // FPS
+        # roughly 250 Hz // 60 Hz = 4 new data points are added each refresh
+        # print(f"new_data_window_size: {new_data_window_size}")
+
+        window_size = 100 
+        # initial_window_size = reduction_factor * window_size
+        # window_catchup_interval = 6 # to catch up the 0.1(6) elemetns lost each 4 we coallesce
+        small_window_prop = 10 # proportion of the total window that the small window occupies
+        small_window_begin = window_size - 2 * window_size // small_window_prop
+        small_window_end = window_size - window_size // small_window_prop
+        # ys_flicker = [list(), list(), list(), list()]
+        # ys1_flicker = [0] * window_size
+        # ys2_flicker = [0] * window_size
+        # ys3_flicker = [0] * window_size
+        # ys4_flicker = [0] * window_size
+        ys_occ_1 = []
+        ys_occ_2 = []
+        ys_occ_1_new = []
+        ys_occ_2_new = []
+        ys_occ_1_old = None
+        ys_occ_2_old = None
         reg1_flicker = LinearRegression(fit_intercept=True)
         reg2_flicker = LinearRegression(fit_intercept=True)
 
@@ -814,7 +1373,6 @@ class Game:
                     try:
                         if self.EEGSensor.sensor.name == "BrainBit":
                             self.connection_flag = True
-                            # mySensor.print_sensor_information()
                     except Exception as err:
                         print(err)
 
@@ -833,70 +1391,189 @@ class Game:
                     run = False
                 pygame.display.update()
             
-            # TODO: Under works
             elif self.flicker_test == True:
-                flicker_window.draw_flicker_test_window_complete(self.win)
-                
-                for j in range(4):
-                    ys[j] = mySensor.get_data()[j][-100:]
-                
-                if len(ys[0]) == 100:
-                    #reg1.fit(np.array(xs).reshape(-1,1), np.array(ys[0]))
-                    #reg2.fit(np.array(xs).reshape(-1,1), np.array(ys[1]))
-                    #reg3.fit(np.array(xs).reshape(-1,1), np.array(ys[2]))
-                    reg4.fit(np.array(xs).reshape(-1,1), np.array(ys[3]))
+                # ret = flicker_window.draw_flicker_test_window(self.win)
+                ret = flicker_window.draw_basic_test_window(self.win)
+                if ret == 0:
+                    continue
+
+                if flicker_window.get_testing_state():
+                    # Naive detection
+                    # ys_occ_1 = mySensor.get_data()[0][-window_size:] # Occ. electrode 1, left hemisphere
+                    # ys_occ_2 = mySensor.get_data()[1][-window_size:] # Occ. electrode 2, right hemisphere
+
+                    # if len(ys_occ_1) == len(ys_occ_2) == window_size:
+
+                        # Reducing every group of 4 elements to 1 element
+                        # i = 0
+                        # j = 0
+                        # while i < window_size:
+                        #     ys_occ_1[j] = sum(ys_occ_1_init[i : i + reduction_factor]) / reduction_factor
+                        #     ys_occ_2[j] = sum(ys_occ_2_init[i : i + reduction_factor]) / reduction_factor
+                        #     i += reduction_factor
+                        #     j += 1
+                        #     if j % 6 == 0:
+                        #         i += 1 # correcting the 0.1(6) error incurred every reduction
+
+                        # occ_1_delta = np.average(ys_occ_1[small_window_begin : small_window_end]) - np.average(ys_occ_1)
+                        # occ_2_delta = np.average(ys_occ_2[small_window_begin : small_window_end]) - np.average(ys_occ_2)
+
+                        # if np.abs(occ_1_delta - occ_2_delta) > ATTENTION_THRESHOLD:
+                        #     if occ_2_delta > occ_1_delta:
+                        #         flicker_window.log_threshold_crossing(delta=occ_2_delta, side="left")
+                        #     else:
+                        #         flicker_window.log_threshold_crossing(delta=occ_1_delta, side="right")
+                        # else:
+                        #     flicker_window.log_indeterminate_diff()
+
+                    # Flicker by flicker period detection
+
+                    # Reducing every group of <reduction_factor_int> elements to 1 element
+                    # ys_occ_1_new += mySensor.get_data()[0][-new_data_count:] # Occ. electrode 1, left hemisphere
+                    # ys_occ_2_new += mySensor.get_data()[1][-new_data_count:] # Occ. electrode 2, right hemisphere
+
+                    # TODO: Make it so that the data from both lobes is recorded at all frequencies separately
+                    #       (So a max. of 4 data files)
+
+                    if flicker_window.get_flicker_location() == 'center':
+                        new_batch_size = min(new_data_window_size, reduction_factor_int - len(ys_occ_1_new))
+                        ys_occ_1_new += mySensor.get_data()[0][-new_batch_size:] # Occ. electrode 1, left hemisphere
+                        ys_occ_2_new += mySensor.get_data()[1][-new_batch_size:] # Occ. electrode 2, right hemisphere
                     
-                    for t in range(100):
-                        #ys_curr_drift = reg1.coef_ * (100 - t)
-                        #ys2_curr_drift = reg2.coef_ * (100 - t)
-                        #ys3_curr_drift = reg3.coef_ * (100 - t)
-                        ys4_curr_drift = reg4.coef_ * (100 - t)
+                    elif flicker_window.get_flicker_location() == 'left-right':
+                        new_batch_size_left = min(new_data_window_size, reduction_factor_int_left - len(ys_occ_1_new))
+                        new_batch_size_right = min(new_data_window_size, reduction_factor_int_right - len(ys_occ_2_new))
+                        ys_occ_1_new += mySensor.get_data()[0][-new_batch_size_left:]
+                        ys_occ_2_new += mySensor.get_data()[1][-new_batch_size_right:]
+                    
+                    elif flicker_window.get_flicker_location() == 'right':
+                            # Occ. lobe 1 (left) for the right-sided flicker
+                            new_batch_size_left = min(new_data_window_size, reduction_factor_int_left - len(ys_occ_1_new))
+                            # Occ. electrode 1, left hemisphere
+                            ys_occ_1_new += mySensor.get_data()[0][-new_batch_size_left:]
+                            # Occ. electrode 2, right hemisphere - used to compare results
+                            ys_occ_2_new += mySensor.get_data()[1][-new_batch_size_left:]
                         
-                        #ys_last[t] = ys[0][t] + ys_curr_drift - reg1.intercept_
-                        #ys2_last[t] = ys[1][t] + ys2_curr_drift - reg2.intercept_
-                        #ys3_last[t] = ys[2][t] + ys3_curr_drift - reg3.intercept_
-                        ys4_last[t] = ys[3][t] + ys4_curr_drift - reg4.intercept_
+                    elif flicker_window.get_flicker_location() == 'left':
+                            # Occ. lobe 2 (right) for the left-sided flicker
+                            new_batch_size_right = min(new_data_window_size, reduction_factor_int_right - len(ys_occ_2_new))
+                            # Occ. electrode 1, left hemisphere - used to compare results
+                            ys_occ_1_new += mySensor.get_data()[0][-new_batch_size_right:]
+                            # Occ. electrode 2, right hemisphere
+                            ys_occ_2_new += mySensor.get_data()[1][-new_batch_size_right:]
 
-                display_data = list(np.array(ys[3]))
+                    if flicker_window.get_flicker_location() == 'center':
+                        if len(ys_occ_1_new) == reduction_factor_int:
+                            # A new batch corresp. to 1 flicker period is complete
+                            error_recovery_counter += 1
+                            if error_recovery_counter == error_recovery_threshold:
+                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                ys_occ_2_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                error_recovery_counter = 0
 
-                def animate(i):
-                    # if self.x == []:
-                    #     self.x = list(range(len(display_data)))
-                    # else:
-                    #     self.x += list(range(x[-1] + 1, x[-1] + len(display_data) + 1))
-                    self.x += list(range(self.current_graph_times,
-                                         self.current_graph_times + len(display_data)))
-                    self.y += display_data
+                            # Linear regression
+                            # xs_flicker = np.arange(0, len(ys_occ_1_new)).tolist()
+                            # reg1_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_occ_1_new))
+                            # reg2_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_occ_2_new))
+
+                            # for t in range(reduction_factor_int):
+                            #     ys_occ_1_new_curr_drift = reg1_flicker.coef_[0] * (reduction_factor_int - t)
+                            #     ys_occ_2_new_curr_drift = reg2_flicker.coef_[0] * (reduction_factor_int - t)
+                            #     ys_occ_1_new[t] = ys_occ_1_new[t] + ys_occ_1_new_curr_drift - reg1_flicker.intercept_
+                            #     ys_occ_2_new[t] = ys_occ_2_new[t] + ys_occ_2_new_curr_drift - reg2_flicker.intercept_
+
+                            # ys_occ_1_new_avg = np.average(ys_occ_1_new)
+                            # ys_occ_2_new_avg = np.average(ys_occ_2_new)
+                            # ys_occ_1.append(ys_occ_1_new_avg)
+                            # ys_occ_2.append(ys_occ_2_new_avg)
+
+                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
+                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
+
+                            # Debugging - logging every element from the buffers w/o averaging
+                            # for t in range(len(ys_occ_1_new)):
+                            #     flicker_window.log_plot_data(ys_occ_1_new[t], 'occ_1')
+                            #     flicker_window.log_plot_data(ys_occ_2_new[t], 'occ_2')
+
+                            # flicker_window.log_plot_data(ys_occ_1_new_avg, 'occ_1')
+                            # flicker_window.log_plot_data(ys_occ_2_new_avg, 'occ_2')
+                            
+                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
+                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
+                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
+                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
+                            
+                            ys_occ_1_new = []
+                            ys_occ_2_new = []
                     
-                    self.current_graph_times += len(self.x)
+                    elif flicker_window.get_flicker_location() == 'left-right':
+                        if len(ys_occ_1_new) == reduction_factor_int_left:
+                            # A new batch corresp. to 1 flicker period is complete
+                            error_recovery_counter_left += 1
+                            if error_recovery_counter_left == error_recovery_threshold_left:
+                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                error_recovery_counter_left = 0
 
-                    print(display_data)
-                    plt.xlim(i-30,i+3)
-                    plt.style.use("ggplot")
-                    plt.plot(self.x,self.y, scalex=True, scaley=True, color="red")
-                    
-                # anim = FuncAnimation(self.fig, animate, interval=100)
-                # plt.show()
-                
-                # time = np.array(range(graph_step * current_graph_iterations,
-                #                       graph_step * (current_graph_iterations + 1)))
-                # plt.xlim(time[0] - 30,
-                #          time[99] + 3)
-                # ax.plot(time, ys4_last)
-                # current_graph_iterations += 1
+                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
+                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
+                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
+                            ys_occ_1_new = []
+                        
+                        if len(ys_occ_2_new) == reduction_factor_int_right:
+                            # A new batch corresp. to 1 flicker period is complete
+                            error_recovery_counter_right += 1
+                            if error_recovery_counter_right == error_recovery_threshold_right:
+                                ys_occ_2_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                error_recovery_counter_right = 0
+                            
+                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
+                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
+                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
+                            ys_occ_2_new = []
 
-                # fig.canvas.draw()
-                # canvas = fig.canvas
-                # renderer = canvas.get_renderer()
-                # raw_data = renderer.tostring_rgb()
-                # plt.close()
+                    elif flicker_window.get_flicker_location() == 'right':
+                        # Occ. lobe 1 (left) for the right-sided flicker
+                        
+                        if len(ys_occ_1_new) == reduction_factor_int_left:
+                            # A new batch corresp. to 1 flicker period is complete
+                            error_recovery_counter_left += 1
+                            if error_recovery_counter_left == error_recovery_threshold_left:
+                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                ys_occ_2_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                error_recovery_counter_left = 0
 
-                # size = canvas.get_width_height()
+                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
+                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
+                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
+                            ys_occ_1_new = []
 
-                # surf = pygame.image.fromstring(raw_data, size, "RGB")
-                # self.screen.blit(surf, (graph_x, graph_y))
-                # pygame.display.flip()
-            
+                            # The second lobe, for comparison
+                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
+                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
+                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
+                            ys_occ_2_new = []
+
+                    elif flicker_window.get_flicker_location() == 'left':
+                        # Occ. lobe 2 (right) for the left-sided flicker
+                        
+                        if len(ys_occ_2_new) == reduction_factor_int_right:
+                            # A new batch corresp. to 1 flicker period is complete
+                            error_recovery_counter_right += 1
+                            if error_recovery_counter_right == error_recovery_threshold_right:
+                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                ys_occ_2_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                error_recovery_counter_right = 0
+                            
+                            # The first lobe, for comparison
+                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
+                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
+                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
+                            ys_occ_1_new = []
+
+                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
+                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
+                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
+                            ys_occ_2_new = []
             else:
                 # Stage 1: Preparing the EEG data (absolute amplitude correction) for the blinking detection
                 for j in range(4):
@@ -904,63 +1581,31 @@ class Game:
 
                 # Simply uncomment the respective lines if you want to use the other channels as well
                 if len(ys[0]) == 100:
-                    #reg1.fit(np.array(xs).reshape(-1,1), np.array(ys[0]))
-                    #reg2.fit(np.array(xs).reshape(-1,1), np.array(ys[1]))
+                    reg1.fit(np.array(xs).reshape(-1,1), np.array(ys[0]))
+                    reg2.fit(np.array(xs).reshape(-1,1), np.array(ys[1]))
                     #reg3.fit(np.array(xs).reshape(-1,1), np.array(ys[2]))
-                    reg4.fit(np.array(xs).reshape(-1,1), np.array(ys[3]))
+                    # reg4.fit(np.array(xs).reshape(-1,1), np.array(ys[3]))
 
                     for t in range(100):
-                        #ys1_curr_drift = reg1.coef_ * (100 - t)
-                        #ys2_curr_drift = reg2.coef_ * (100 - t)
+                        ys1_curr_drift = reg1.coef_ * (100 - t)
+                        ys2_curr_drift = reg2.coef_ * (100 - t)
                         #ys3_curr_drift = reg3.coef_ * (100 - t)
-                        ys4_curr_drift = reg4.coef_ * (100 - t)
+                        #ys4_curr_drift = reg4.coef_ * (100 - t)
                         
-                        #ys1_last[t] = ys[0][t] + ys1_curr_drift - reg1.intercept_
-                        #ys2_last[t] = ys[1][t] + ys2_curr_drift - reg2.intercept_
+                        ys1_last[t] = ys[0][t] + ys1_curr_drift - reg1.intercept_
+                        ys2_last[t] = ys[1][t] + ys2_curr_drift - reg2.intercept_
                         #ys3_last[t] = ys[2][t] + ys3_curr_drift - reg3.intercept_
-                        ys4_last[t] = ys[3][t] + ys4_curr_drift - reg4.intercept_
-
-                # Stage 2: Preparing the EEG data for flicker-induced SSVEP detection
-                for j in range(2): # We only need the occipital lobe data for now
-                    ys_flicker[j] = mySensor.get_data()[j][-window_size:]
-
-                    # Method 1: Reducing the sample size from 250 to 60, i.e. to the flicker frequency
-                    # t = 0
-                    # it = 1
-                    # ys_flicker_reduced = []
-                    # while t < sample_len:
-                    #     curr_window = ys_flicker[j][t : min(t+4, sample_len)]
-                        
-                    #     # Correcting every 4 iterations for the 0.1(6) in 250/60 = 4.1(6)
-                    #     if it % 4 == 0 and sample_len - t > 4:
-                    #         curr_window.append(ys_flicker[j][t+4])
-                    #         t += 5
-                    #     else:
-                    #         t += 4
-                    #     ys_flicker_reduced.append(sum(curr_window) / len(curr_window))
-                    #     it += 1
-                    
-                    # ys_flicker[j] = ys_flicker_reduced
-
-                # Method 2: Using a moving window
-                # window_average = sum(ys_flicker) / len(ys_flicker)
-                # ys_flicker = [ys_flicker[t] - window_average for t in range(250)]
-
-                if len(ys_flicker[0]) == window_size:
-                    reg1_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_flicker[0]))
-                    reg2_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_flicker[1]))
-                    reg1_flicker_slope = reg1_flicker.coef_
-                    reg1_flicker_slope = reg1_flicker.coef_
-
-                    for t in range(window_size):
-                        ys1_flicker[0]
+                        # ys4_last[t] = ys[3][t] + ys4_curr_drift - reg4.intercept_
 
                 # TODO: Correct the amplitude drift without affecting the reltative amplitude differences
+                # self.log_current_data_buffer(ys1_last, 'occ_1')
+                # self.log_current_data_buffer(ys2_last, 'occ_2')
 
+                # Moving the ball based on player controls (currently: blinking)
                 if self.direction != 0 and ball.y_vel > 0:
                     if self.direction == 1:
                         if blinked_bool == 0:
-                            if (np.average(ys4_last[0:99]) - np.average(ys4_last[80:90]) > BLINK_THRESHOLD) and paddle.x + paddle.width + paddle.VEL <= self.WIDTH:
+                            if (np.average(ys1_last[0:99]) - np.average(ys1_last[80:90]) > BLINK_THRESHOLD) and paddle.x + paddle.width + paddle.VEL <= self.WIDTH:
                                 # paddle.move(self.direction)
                                 paddle.move_to_final_location(ball.x_predict, self.steps_needed, self.direction)
                                 blinked_bool = 1
@@ -972,7 +1617,7 @@ class Game:
                                 blinked_count = 0
                     elif self.direction == -1:
                         if blinked_bool == 0:
-                            if (np.average(ys4_last[0:99]) - np.average(ys4_last[80:90]) > BLINK_THRESHOLD) and paddle.x - paddle.VEL >= 0:
+                            if (np.average(ys1_last[0:99]) - np.average(ys1_last[80:90]) > BLINK_THRESHOLD) and paddle.x - paddle.VEL >= 0:
                                 # paddle.move(self.direction)
                                 paddle.move_to_final_location(ball.x_predict, self.steps_needed, self.direction)
                                 blinked_bool = 1

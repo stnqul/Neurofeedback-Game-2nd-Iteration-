@@ -26,12 +26,13 @@ class Sensor:
         self.last_packnum = 0
         self.global_pack_counter = 0
         self.last_sec = datetime.now().second
+        self.scan_time = 10     # initially: 5
 
     def activate_sensor(self):
         """
         Scans for devices via bluetooth, if a sensor (device) is found then assigns it to a sensor object in a separate thread using ThreadPool.
         """
-        print("Scanning for devices for 5 sec...")
+        print(f"Scanning for devices for {self.scan_time} sec...")
         try:
             def sensor_found(scanner, sensors):
                 for index in range(len(sensors)):
@@ -62,9 +63,9 @@ class Sensor:
 
             self.scanner.sensorsChanged = sensor_found
             self.scanner.start()
-            sleep(5)
+            sleep(self.scan_time)
             self.scanner.stop()
-            # self.scanner.sensorsChanged = None
+            self.scanner.sensorsChanged = None
 
             # Getting the sensor information from the found device:
             sensorsInfo = self.scanner.sensors()
@@ -80,6 +81,7 @@ class Sensor:
                 print("Device connected")
             # Defining the sensorFamily:
             self.sensorFamily = self.sensor.sens_family
+
             # Assigning the callback function into sensor:
             if self.sensor.is_supported_feature(SensorFeature.Signal): # FeatureSignal used to be here
                 self.sensor.signalDataReceived = on_signal_data_received
@@ -135,14 +137,14 @@ class Sensor:
         else:
             print("A problem with sensor or command occured while reading the sensor signal.")
         
-        if self.sensor.is_supported_command(SensorCommand.StartResist):
-            self.sensor.exec_command(SensorCommand.StartResist)
-            print("Started reading the resistance...")
-            self.threading_event.wait(timeout=T)
-            self.sensor.exec_command(SensorCommand.StopResist)
-            print("Stopped reading the resistance...")
-        else:
-            print("A problem with sensor or command occured while reading sensor resistance.")
+        # if self.sensor.is_supported_command(SensorCommand.StartResist):
+        #     self.sensor.exec_command(SensorCommand.StartResist)
+        #     print("Started reading the resistance...")
+        #     self.threading_event.wait(timeout=T)
+        #     self.sensor.exec_command(SensorCommand.StopResist)
+        #     print("Stopped reading the resistance...")
+        # else:
+        #     print("A problem with sensor or command occured while reading sensor resistance.")
 
     def print_sensor_information(self):
         """
