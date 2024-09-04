@@ -56,7 +56,9 @@ class Sensor:
 
             def on_resist_data_received(sensor, data):
                 self.resist_data.append(data)
-                print(type(data))
+
+                # print(f"Resist data type: {type(data)}")
+                # print(f"Resist data: {data}")
 
             # Scanning for devices:
             self.scanner = Scanner([SensorFamily.LEBrainBit]) # Sensor name may change due to further updates
@@ -82,11 +84,17 @@ class Sensor:
             # Defining the sensorFamily:
             self.sensorFamily = self.sensor.sens_family
 
-            # Assigning the callback function into sensor:
+            # Assigning the signal data callback function into sensor:
             if self.sensor.is_supported_feature(SensorFeature.Signal): # FeatureSignal used to be here
                 self.sensor.signalDataReceived = on_signal_data_received
-            # if self.sensor.is_supported_feature(SensorFeature.Resist):
-                # self.sensor.resistDataReceived = on_resist_data_received
+                # print(f"Value of the signalDataReceived field: {self.sensor.__dict__['signalDataReceived']}")
+
+            # Assigning the resistance value callback function into sensor:
+            if self.sensor.is_supported_feature(SensorFeature.Resist):
+                self.sensor.resistDataReceived = on_resist_data_received
+                # print(f"Value of the resistDataReceived field: {self.sensor.__dict__['resistDataReceived']}")
+                if self.sensor.is_supported_command(SensorCommand.StartResist):
+                    self.sensor.exec_command(SensorCommand.StartResist)
 
         except Exception as err:
             print(err)

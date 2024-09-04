@@ -7,7 +7,7 @@ import atexit
 
 from matplotlib import pyplot as plt
 from sklearn.linear_model import LinearRegression
-from scipy.fft import rfft, rfftfreq
+# from scipy.fft import rfft, rfftfreq
 
 from button import Button
 from sensor import Sensor
@@ -19,7 +19,7 @@ SESSION_LENGTH = 900
 BLINK_THRESHOLD = 5 * (10 ** -5) # 0.00005
 ATTENTION_THRESHOLD = 1 * (10 ** -5)
 
-WIN_WIDTH, WIN_HEIGHT = 700, 700 # !Original height: 800
+WIN_WIDTH, WIN_HEIGHT = 800, 700 # !Original height: 800, Original width: 700
 PADDLE_WIDTH, PADDLE_HEIGHT, PADDLE_VEL = 100, 20, 100
 BALL_RADIUS, BALL_INITIAL_VEL = 10, 4 # !Original velocity: 4
 MAX_DIFFICULTY, MAX_LIVES = 5, 5
@@ -394,9 +394,9 @@ class Game:
             self.CROSS_COLOR = "grey"
 
             # Flickering patches
-            self.cross_flicker_distance = 120
-            self.flicker_width = 121
-            self.flicker_height = 121
+            self.cross_flicker_distance = 360 # Original: 120
+            self.flicker_width = 180
+            self.flicker_height = 120
             self.flicker_left_x = self.horizontal_x - self.flicker_width - self.cross_flicker_distance
             self.flicker_right_x = self.horizontal_x + self.horizontal_width + self.cross_flicker_distance
             self.flicker_y = self.cross_y
@@ -437,7 +437,7 @@ class Game:
             # i. Basic test
             self.basic_countdown_secs = 5
             self.basic_countdown_fps = FPS * self.basic_countdown_secs
-            self.basic_test_period_secs = 60
+            self.basic_test_period_secs = 60 * 5 # 5 mins
             self.basic_test_period_fps = FPS * self.basic_test_period_secs
 
             self.basic_flicker = flicker_on
@@ -446,6 +446,7 @@ class Game:
             self.left_flicker = False
             self.right_flicker = False
 
+            # if self.basic_flicker:
             if left_period or right_period:
                 if left_period:
                     self.left_flicker = True
@@ -505,34 +506,138 @@ class Game:
             self.average_indet_activations_percentage = 0
 
             # Logging
-            if self.basic_flicker:
-                occ_1_plot_file_name = "../plots/occ_1_basic_flicker.txt"
-                occ_2_plot_file_name = "../plots/occ_2_basic_flicker.txt"
-                occ_1_data_file_name = "../plots/occ_1_basic_flicker_data.txt"
-                occ_2_data_file_name = "../plots/occ_2_basic_flicker_data.txt"
+            if self.central_flicker or not(self.basic_flicker):
+                if self.central_flicker:
+                    occ_1_plot_file_name = "../plots/occ_1_basic_flicker.txt"
+                    occ_2_plot_file_name = "../plots/occ_2_basic_flicker.txt"
+                    occ_1_data_file_name = "../plots/occ_1_basic_flicker_data.txt"
+                    occ_2_data_file_name = "../plots/occ_2_basic_flicker_data.txt"
+                    
+                    tmp_1_plot_file_name = "../plots/tmp_1_basic_flicker.txt"
+                    tmp_2_plot_file_name = "../plots/tmp_2_basic_flicker.txt"
+                    tmp_1_data_file_name = "../plots/tmp_1_basic_flicker_data.txt"
+                    tmp_2_data_file_name = "../plots/tmp_2_basic_flicker_data.txt"
+                else:
+                    occ_1_plot_file_name = "../plots/occ_1_basic_no_flicker.txt"
+                    occ_2_plot_file_name = "../plots/occ_2_basic_no_flicker.txt"
+                    occ_1_data_file_name = "../plots/occ_1_basic_no_flicker_data.txt"
+                    occ_2_data_file_name = "../plots/occ_2_basic_no_flicker_data.txt"
+                    
+                    tmp_1_plot_file_name = "../plots/tmp_1_basic_no_flicker.txt"
+                    tmp_2_plot_file_name = "../plots/tmp_2_basic_no_flicker.txt"
+                    tmp_1_data_file_name = "../plots/tmp_1_basic_no_flicker_data.txt"
+                    tmp_2_data_file_name = "../plots/tmp_2_basic_no_flicker_data.txt"
+
+                os.makedirs(os.path.dirname(occ_1_plot_file_name), exist_ok=True)
+                os.makedirs(os.path.dirname(occ_2_plot_file_name), exist_ok=True)
+                os.makedirs(os.path.dirname(occ_1_data_file_name), exist_ok=True)
+                os.makedirs(os.path.dirname(occ_2_data_file_name), exist_ok=True)
+
+                os.makedirs(os.path.dirname(tmp_1_plot_file_name), exist_ok=True)
+                os.makedirs(os.path.dirname(tmp_2_plot_file_name), exist_ok=True)
+                os.makedirs(os.path.dirname(tmp_1_data_file_name), exist_ok=True)
+                os.makedirs(os.path.dirname(tmp_2_data_file_name), exist_ok=True)
+
+                self.occ_1_plot_file = open(occ_1_plot_file_name, 'w')
+                self.occ_2_plot_file = open(occ_2_plot_file_name, 'w')
+                self.occ_1_data_file = open(occ_1_data_file_name, 'w')
+                self.occ_2_data_file = open(occ_2_data_file_name, 'w')
+                
+                self.tmp_1_plot_file = open(tmp_1_plot_file_name, 'w')
+                self.tmp_2_plot_file = open(tmp_2_plot_file_name, 'w')
+                self.tmp_1_data_file = open(tmp_1_data_file_name, 'w')
+                self.tmp_2_data_file = open(tmp_2_data_file_name, 'w')
+
+                self.occ_1_plot_time_point = 0
+                self.occ_2_plot_time_point = 0
+                self.tmp_1_plot_time_point = 0
+                self.tmp_2_plot_time_point = 0
+            
             else:
-                occ_1_plot_file_name = "../plots/occ_1_basic_no_flicker.txt"
-                occ_2_plot_file_name = "../plots/occ_2_basic_no_flicker.txt"
-                occ_1_data_file_name = "../plots/occ_1_basic_no_flicker_data.txt"
-                occ_2_data_file_name = "../plots/occ_2_basic_no_flicker_data.txt"
+                if self.right_flicker:
+                    occ_1_left_plot_file_name = "../plots/occ_1_left_basic_flicker.txt"
+                    occ_2_left_plot_file_name = "../plots/occ_2_left_basic_flicker.txt"
+                    occ_1_left_data_file_name = "../plots/occ_1_left_basic_flicker_data.txt"
+                    occ_2_left_data_file_name = "../plots/occ_2_left_basic_flicker_data.txt"
+                    
+                    tmp_1_left_plot_file_name = "../plots/tmp_1_left_basic_flicker.txt"
+                    tmp_2_left_plot_file_name = "../plots/tmp_2_left_basic_flicker.txt"
+                    tmp_1_left_data_file_name = "../plots/tmp_1_left_basic_flicker_data.txt"
+                    tmp_2_left_data_file_name = "../plots/tmp_2_left_basic_flicker_data.txt"
 
-            os.makedirs(os.path.dirname(occ_1_plot_file_name), exist_ok=True)
-            os.makedirs(os.path.dirname(occ_2_plot_file_name), exist_ok=True)
-            os.makedirs(os.path.dirname(occ_1_data_file_name), exist_ok=True)
-            os.makedirs(os.path.dirname(occ_2_data_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_1_left_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_2_left_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_1_left_data_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_2_left_data_file_name), exist_ok=True)
+                    
+                    os.makedirs(os.path.dirname(tmp_1_left_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(tmp_2_left_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(tmp_1_left_data_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(tmp_2_left_data_file_name), exist_ok=True)
 
-            self.occ_1_plot_file = open(occ_1_plot_file_name, 'w')
-            self.occ_2_plot_file = open(occ_2_plot_file_name, 'w')
-            self.occ_1_data_file = open(occ_1_data_file_name, 'w')
-            self.occ_2_data_file = open(occ_2_data_file_name, 'w')
+                    self.occ_1_left_plot_file = open(occ_1_left_plot_file_name, 'w')
+                    self.occ_2_left_plot_file = open(occ_2_left_plot_file_name, 'w')
+                    self.occ_1_left_data_file = open(occ_1_left_data_file_name, 'w')
+                    self.occ_2_left_data_file = open(occ_2_left_data_file_name, 'w')
+                    
+                    self.tmp_1_left_plot_file = open(tmp_1_left_plot_file_name, 'w')
+                    self.tmp_2_left_plot_file = open(tmp_2_left_plot_file_name, 'w')
+                    self.tmp_1_left_data_file = open(tmp_1_left_data_file_name, 'w')
+                    self.tmp_2_left_data_file = open(tmp_2_left_data_file_name, 'w')
 
-            self.occ_1_plot_time_point = 0
-            self.occ_2_plot_time_point = 0
+                    self.occ_1_left_plot_time_point = 0
+                    self.occ_2_left_plot_time_point = 0
+                    
+                    self.tmp_1_left_plot_time_point = 0
+                    self.tmp_2_left_plot_time_point = 0
+                
+                if self.left_flicker:
+                    occ_2_right_plot_file_name = "../plots/occ_2_right_basic_flicker.txt"
+                    occ_1_right_plot_file_name = "../plots/occ_1_right_basic_flicker.txt"
+                    occ_2_right_data_file_name = "../plots/occ_2_right_basic_flicker_data.txt"
+                    occ_1_right_data_file_name = "../plots/occ_1_right_basic_flicker_data.txt"
 
-            self.write_plot_data_at_end = True
+                    tmp_2_right_plot_file_name = "../plots/tmp_2_right_basic_flicker.txt"
+                    tmp_1_right_plot_file_name = "../plots/tmp_1_right_basic_flicker.txt"
+                    tmp_2_right_data_file_name = "../plots/tmp_2_right_basic_flicker_data.txt"
+                    tmp_1_right_data_file_name = "../plots/tmp_1_right_basic_flicker_data.txt"
+
+                    os.makedirs(os.path.dirname(occ_2_right_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_1_right_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_2_right_data_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(occ_1_right_data_file_name), exist_ok=True)
+
+                    os.makedirs(os.path.dirname(tmp_2_right_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(tmp_1_right_plot_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(tmp_2_right_data_file_name), exist_ok=True)
+                    os.makedirs(os.path.dirname(tmp_1_right_data_file_name), exist_ok=True)
+
+                    self.occ_2_right_plot_file = open(occ_2_right_plot_file_name, 'w')
+                    self.occ_1_right_plot_file = open(occ_1_right_plot_file_name, 'w')
+                    self.occ_2_right_data_file = open(occ_2_right_data_file_name, 'w')
+                    self.occ_1_right_data_file = open(occ_1_right_data_file_name, 'w')
+
+                    self.tmp_2_right_plot_file = open(tmp_2_right_plot_file_name, 'w')
+                    self.tmp_1_right_plot_file = open(tmp_1_right_plot_file_name, 'w')
+                    self.tmp_2_right_data_file = open(tmp_2_right_data_file_name, 'w')
+                    self.tmp_1_right_data_file = open(tmp_1_right_data_file_name, 'w')
+
+                    self.occ_2_right_plot_time_point = 0
+                    self.occ_1_right_plot_time_point = 0
+                    
+                    self.tmp_2_right_plot_time_point = 0
+                    self.tmp_1_right_plot_time_point = 0
+
+            self.write_plot_data_at_end = False
             if self.write_plot_data_at_end:
+                # TODO: Temporal lobes
                 self.occ_1_plot_points = []
                 self.occ_2_plot_points = []
+                
+                self.occ_1_left_plot_points = []
+                self.occ_2_left_plot_points = []
+                self.occ_2_right_plot_points = []
+                self.occ_1_right_plot_points = []
 
             # File cleanup
             atexit.register(self.cleanup)
@@ -541,15 +646,58 @@ class Game:
             if self.write_plot_data_at_end:
                 self.empty_logging_queue()
             self.flicker_log_file.close()
-            self.occ_1_plot_file.close()
-            self.occ_2_plot_file.close()
+
+            if self.central_flicker or not(self.basic_flicker):
+                self.occ_1_plot_file.close()
+                self.occ_2_plot_file.close()
+                self.tmp_1_plot_file.close()
+                self.tmp_2_plot_file.close()
+            else:
+                if self.right_flicker:
+                    self.occ_1_left_plot_file.close()
+                    self.occ_2_left_plot_file.close()
+                    self.tmp_1_left_plot_file.close()
+                    self.tmp_2_left_plot_file.close()
+                
+                if self.left_flicker:
+                    self.occ_1_right_plot_file.close()
+                    self.occ_2_right_plot_file.close()
+                    self.tmp_1_right_plot_file.close()
+                    self.tmp_2_right_plot_file.close()
 
             # Logging the sample rate for the FFT in the data log file
-            self.occ_1_data_file.write(f"{SAMPLE_FREQ}")
-            self.occ_2_data_file.write(f"{SAMPLE_FREQ}")
+            if self.central_flicker or not(self.basic_flicker):
+                self.occ_1_data_file.write(f"{SAMPLE_FREQ}")
+                self.occ_2_data_file.write(f"{SAMPLE_FREQ}")
+                self.occ_1_data_file.close()
+                self.occ_2_data_file.close()
 
-            self.occ_1_data_file.close()
-            self.occ_2_data_file.close()
+                self.tmp_1_data_file.write(f"{SAMPLE_FREQ}")
+                self.tmp_2_data_file.write(f"{SAMPLE_FREQ}")
+                self.tmp_1_data_file.close()
+                self.tmp_2_data_file.close()
+            else:
+                if self.right_flicker:
+                    self.occ_1_left_data_file.write(f"{SAMPLE_FREQ}")
+                    self.occ_2_left_data_file.write(f"{SAMPLE_FREQ}")
+                    self.occ_1_left_data_file.close()
+                    self.occ_2_left_data_file.close()
+
+                    self.tmp_1_left_data_file.write(f"{SAMPLE_FREQ}")
+                    self.tmp_2_left_data_file.write(f"{SAMPLE_FREQ}")
+                    self.tmp_1_left_data_file.close()
+                    self.tmp_2_left_data_file.close()
+
+                if self.left_flicker:
+                    self.occ_1_right_data_file.write(f"{SAMPLE_FREQ}")
+                    self.occ_2_right_data_file.write(f"{SAMPLE_FREQ}")
+                    self.occ_1_right_data_file.close()
+                    self.occ_2_right_data_file.close()
+                    
+                    self.tmp_1_right_data_file.write(f"{SAMPLE_FREQ}")
+                    self.tmp_2_right_data_file.write(f"{SAMPLE_FREQ}")
+                    self.tmp_1_right_data_file.close()
+                    self.tmp_2_right_data_file.close()
 
         def get_testing_state(self):
             return self.is_testing
@@ -584,15 +732,19 @@ class Game:
             # It's whole division in order to keep the reduction factor divisible by new_window_size, a.k.a. 4
             if self.left_flicker:
                 return FPS // self.left_period
+            elif self.right_flicker:
+                return FPS // self.right_period
             else:
-                return None
+                return FPS // self.period
         
         def get_right_flicker_frequency(self):
             # It's whole division in order to keep the reduction factor divisible by new_window_size, a.k.a. 4
             if self.right_flicker:
                 return FPS // self.right_period
+            elif self.left_flicker:
+                return FPS // self.left_period
             else:
-                return None
+                return FPS // self.period
 
         def log_threshold_crossing(self, delta, side):
             # self.flicker_log_file.write(f"{self.test_no}: Threshold crossed by {delta} in the {side} hs\n")
@@ -604,21 +756,74 @@ class Game:
         # def log_error(self):
         #     self.flicker_log_file.write(f"Avg difference was >= in the wrong hs\n")
             
-        def log_plot_data(self, amp, hs):
+        def log_plot_data(self, amp, file):
             if self.write_plot_data_at_end:
-                if hs == 'occ_1':
+                if file == 'occ_1':
                     self.occ_1_plot_points.append((amp, self.occ_1_plot_time_point))
                     self.occ_1_plot_time_point += 1
-                elif hs == 'occ_2':
+                elif file == 'occ_2':
                     self.occ_2_plot_points.append((amp, self.occ_2_plot_time_point))
                     self.occ_2_plot_time_point += 1
+
+                elif file == 'occ_1_left':
+                    self.occ_1_left_plot_points.append((amp, self.occ_1_left_plot_time_point))
+                    self.occ_1_left_plot_time_point += 1
+                elif file == 'occ_2_left':
+                    self.occ_2_left_plot_points.append((amp, self.occ_2_left_plot_time_point))
+                    self.occ_2_left_plot_time_point += 1
+                    
+                elif file == 'occ_1_right':
+                    self.occ_1_right_plot_points.append((amp, self.occ_1_right_plot_time_point))
+                    self.occ_1_right_plot_time_point += 1
+                elif file == 'occ_2_right':
+                    self.occ_2_right_plot_points.append((amp, self.occ_2_right_plot_time_point))
+                    self.occ_2_right_plot_time_point += 1
+                
+                # TODO: Temporals
+
             else:
-                if hs == 'occ_1':
+                if file == 'occ_1':
                     self.occ_1_plot_file.write(f"{amp} {self.occ_1_plot_time_point}\n")
                     self.occ_1_plot_time_point += 1
-                elif hs == 'occ_2':
+                elif file == 'occ_2':
                     self.occ_2_plot_file.write(f"{amp} {self.occ_2_plot_time_point}\n")
                     self.occ_2_plot_time_point += 1
+                
+                elif file == 'occ_1_left':
+                    self.occ_1_left_plot_file.write(f"{amp} {self.occ_1_left_plot_time_point}\n")
+                    self.occ_1_left_plot_time_point += 1
+                elif file == 'occ_2_left':
+                    self.occ_2_left_plot_file.write(f"{amp} {self.occ_2_left_plot_time_point}\n")
+                    self.occ_2_left_plot_time_point += 1
+
+                elif file == 'occ_1_right':
+                    self.occ_1_right_plot_file.write(f"{amp} {self.occ_1_right_plot_time_point}\n")
+                    self.occ_1_right_plot_time_point += 1
+                elif file == 'occ_2_right':
+                    self.occ_2_right_plot_file.write(f"{amp} {self.occ_2_right_plot_time_point}\n")
+                    self.occ_2_right_plot_time_point += 1
+
+                # Temporals
+                elif file == 'tmp_1':
+                    self.tmp_1_plot_file.write(f"{amp} {self.tmp_1_plot_time_point}\n")
+                    self.tmp_1_plot_time_point += 1
+                elif file == 'tmp_2':
+                    self.tmp_2_plot_file.write(f"{amp} {self.tmp_2_plot_time_point}\n")
+                    self.tmp_2_plot_time_point += 1
+
+                elif file == 'tmp_1_right':
+                    self.tmp_1_right_plot_file.write(f"{amp} {self.tmp_1_right_plot_time_point}\n")
+                    self.tmp_1_right_plot_time_point += 1
+                elif file == 'tmp_2_right':
+                    self.tmp_2_right_plot_file.write(f"{amp} {self.tmp_2_right_plot_time_point}\n")
+                    self.tmp_2_right_plot_time_point += 1
+                    
+                elif file == 'tmp_1_left':
+                    self.tmp_1_left_plot_file.write(f"{amp} {self.tmp_1_left_plot_time_point}\n")
+                    self.tmp_1_left_plot_time_point += 1
+                elif file == 'tmp_2_left':
+                    self.tmp_2_left_plot_file.write(f"{amp} {self.tmp_2_left_plot_time_point}\n")
+                    self.tmp_2_left_plot_time_point += 1
 
         def log_data(self, buff, hs):
             if hs == 'occ_1':
@@ -629,6 +834,52 @@ class Game:
                 for dp in buff:
                     self.occ_2_data_file.write(str(dp) + " ")
                 self.occ_2_data_file.write("\n")
+            
+            elif hs == 'occ_1_left':
+                for dp in buff:
+                    self.occ_1_left_data_file.write(str(dp) + " ")
+                self.occ_1_left_data_file.write("\n")
+            elif hs == 'occ_2_left':
+                for dp in buff:
+                    self.occ_2_left_data_file.write(str(dp) + " ")
+                self.occ_2_left_data_file.write("\n")
+                
+            elif hs == 'occ_1_right':
+                for dp in buff:
+                    self.occ_1_right_data_file.write(str(dp) + " ")
+                self.occ_1_right_data_file.write("\n")
+            elif hs == 'occ_2_right':
+                for dp in buff:
+                    self.occ_2_right_data_file.write(str(dp) + " ")
+                self.occ_2_right_data_file.write("\n")
+                
+            # Temporals
+            elif hs == 'tmp_1_right':
+                for dp in buff:
+                    self.tmp_1_right_data_file.write(str(dp) + " ")
+                self.tmp_1_right_data_file.write("\n")
+            elif hs == 'tmp_2_right':
+                for dp in buff:
+                    self.tmp_2_right_data_file.write(str(dp) + " ")
+                self.tmp_2_right_data_file.write("\n")
+            
+            elif hs == 'tmp_1_left':
+                for dp in buff:
+                    self.tmp_1_left_data_file.write(str(dp) + " ")
+                self.tmp_1_left_data_file.write("\n")
+            elif hs == 'tmp_2_left':
+                for dp in buff:
+                    self.tmp_2_left_data_file.write(str(dp) + " ")
+                self.tmp_2_left_data_file.write("\n")
+                
+            elif hs == 'tmp_1':
+                for dp in buff:
+                    self.tmp_1_data_file.write(str(dp) + " ")
+                self.tmp_1_data_file.write("\n")
+            elif hs == 'tmp_2':
+                for dp in buff:
+                    self.tmp_2_data_file.write(str(dp) + " ")
+                self.tmp_2_data_file.write("\n")
 
         def empty_logging_queue(self):
             # self.linearly_regress_plot_data()
@@ -636,24 +887,6 @@ class Game:
                 self.occ_1_plot_file.write(f"{amp} {t}\n")
             for (amp,t) in self.occ_2_plot_points:
                 self.occ_2_plot_file.write(f"{amp} {t}\n")
-            # self.transfrom_into_freq_plot()
-            # for (y1,y2,x) in zip(self.yf_occ_1, self.yf_occ_2, self.xf):
-            #     self.occ_1_plot_file.write(f"{y1} {x}\n")
-            #     self.occ_2_plot_file.write(f"{y2} {x}\n")
-
-        # def transfrom_into_freq_plot(self):
-        #     SAMPLE_RATE = SAMPLE_FREQ // (self.period * 2)
-        #     N = SAMPLE_RATE * self.basic_test_period_secs
-            
-        #     self.occ_1_plot_points = list(map(lambda t: t[1], self.occ_1_plot_points))
-        #     self.occ_2_plot_points = list(map(lambda t: t[1], self.occ_2_plot_points))
-
-        #     self.xf = rfftfreq(N, 1 / SAMPLE_RATE)
-        #     self.yf_occ_1 = rfft(self.occ_1_plot_points)
-        #     self.yf_occ_2 = rfft(self.occ_2_plot_points)
-
-        #     self.yf_occ_1 = np.abs(self.yf_occ_1)
-        #     self.yf_occ_2 = np.abs(self.yf_occ_2)
 
         def linearly_regress_plot_data(self):
             ys_occ_1_amps = list(map(lambda t: t[0], self.occ_1_plot_points))
@@ -773,7 +1006,9 @@ class Game:
                     instr_text = self.FLICKER_FONT.render("Focus covertly on the right side of the screen for " +
                                                         f"{self.basic_test_period_secs} seconds",
                                                         1, "black")
-                    
+
+                # TODO: make the text always fit the window                    
+
                 win.blit(instr_text, (WIN_WIDTH / 2 - instr_text.get_width() / 2,
                                       WIN_HEIGHT / 4))
                 self.test_timer_fps += 1
@@ -784,7 +1019,6 @@ class Game:
                     self.has_signaled_flicker_start = True
                 
                 if self.basic_flicker == True:
-                    # TODO: do different counts for the left and right flickers, if necessary
                     if self.left_flicker or self.right_flicker:
                         if self.left_flicker:
                             if self.left_flicker_count <= self.left_flicker_on_period:
@@ -1189,7 +1423,7 @@ class Game:
         #                            Originally: x:90  y:WIN_HEIGHT - 120                           
 
         # TODO: Change the FlickerWindow object instantiation so that there is only one period and flicker_on option
-        flicker_window = self.FlickerWindow(flicker_on=True, left_period=2, left_flicker_on_period=1)
+        flicker_window = self.FlickerWindow(flicker_on=True, right_period=3, right_flicker_on_period=1)
         #                                   period=2 - 1 flicker color change every frame,
         #                                              2 frame flicker period,
         #                                              30 Hz
@@ -1249,6 +1483,7 @@ class Game:
                 
                 error_recovery_counter_right = 0
 
+
         bricks = self.generate_bricks(1, 10)
         lives = MAX_LIVES
 
@@ -1296,14 +1531,27 @@ class Game:
         # ys2_flicker = [0] * window_size
         # ys3_flicker = [0] * window_size
         # ys4_flicker = [0] * window_size
-        ys_occ_1 = []
-        ys_occ_2 = []
+        # ys_occ_1 = []
+        # ys_occ_2 = []
         ys_occ_1_new = []
         ys_occ_2_new = []
-        ys_occ_1_old = None
-        ys_occ_2_old = None
-        reg1_flicker = LinearRegression(fit_intercept=True)
-        reg2_flicker = LinearRegression(fit_intercept=True)
+        ys_occ_1_left_new = []
+        ys_occ_1_right_new = []
+        ys_occ_2_left_new = []
+        ys_occ_2_right_new = []
+
+        # Temporals
+        ys_tmp_1_new = []
+        ys_tmp_2_new = []
+        ys_tmp_1_left_new = []
+        ys_tmp_1_right_new = []
+        ys_tmp_2_left_new = []
+        ys_tmp_2_right_new = []
+
+        # ys_occ_1_old = None
+        # ys_occ_2_old = None
+        # reg1_flicker = LinearRegression(fit_intercept=True)
+        # reg2_flicker = LinearRegression(fit_intercept=True)
 
         # Initializing the buttons:
         start_button = Button(250, 100, "Start", self.button_background_img, 2)
@@ -1398,182 +1646,153 @@ class Game:
                     continue
 
                 if flicker_window.get_testing_state():
-                    # Naive detection
-                    # ys_occ_1 = mySensor.get_data()[0][-window_size:] # Occ. electrode 1, left hemisphere
-                    # ys_occ_2 = mySensor.get_data()[1][-window_size:] # Occ. electrode 2, right hemisphere
 
-                    # if len(ys_occ_1) == len(ys_occ_2) == window_size:
+                    # new_batch_size_left = min(new_data_window_size, reduction_factor_int_left - len(ys_occ_1_new))
+                    # new_batch_size_right = min(new_data_window_size, reduction_factor_int_right - len(ys_occ_2_new))
 
-                        # Reducing every group of 4 elements to 1 element
-                        # i = 0
-                        # j = 0
-                        # while i < window_size:
-                        #     ys_occ_1[j] = sum(ys_occ_1_init[i : i + reduction_factor]) / reduction_factor
-                        #     ys_occ_2[j] = sum(ys_occ_2_init[i : i + reduction_factor]) / reduction_factor
-                        #     i += reduction_factor
-                        #     j += 1
-                        #     if j % 6 == 0:
-                        #         i += 1 # correcting the 0.1(6) error incurred every reduction
+                    # The buffers where each lobe (1 and 2) is updated by its corresponding batch size (left and right),
+                    #       as determined using the flicker frequency on each side
+                    # ys_occ_1_left_new += mySensor.get_data()[0][-new_batch_size_left:]
+                    # ys_occ_2_right_new += mySensor.get_data()[1][-new_batch_size_right:]
 
-                        # occ_1_delta = np.average(ys_occ_1[small_window_begin : small_window_end]) - np.average(ys_occ_1)
-                        # occ_2_delta = np.average(ys_occ_2[small_window_begin : small_window_end]) - np.average(ys_occ_2)
-
-                        # if np.abs(occ_1_delta - occ_2_delta) > ATTENTION_THRESHOLD:
-                        #     if occ_2_delta > occ_1_delta:
-                        #         flicker_window.log_threshold_crossing(delta=occ_2_delta, side="left")
-                        #     else:
-                        #         flicker_window.log_threshold_crossing(delta=occ_1_delta, side="right")
-                        # else:
-                        #     flicker_window.log_indeterminate_diff()
-
-                    # Flicker by flicker period detection
-
-                    # Reducing every group of <reduction_factor_int> elements to 1 element
-                    # ys_occ_1_new += mySensor.get_data()[0][-new_data_count:] # Occ. electrode 1, left hemisphere
-                    # ys_occ_2_new += mySensor.get_data()[1][-new_data_count:] # Occ. electrode 2, right hemisphere
-
-                    # TODO: Make it so that the data from both lobes is recorded at all frequencies separately
-                    #       (So a max. of 4 data files)
-
+                    # The buffers where each lobe (1 and 2) is updated by the oher's batch size (right and left),
+                    #       as determined using the flicker frequency on each side
+                    # ys_occ_1_right_new += mySensor.get_data()[0][-new_batch_size_right:]
+                    # ys_occ_2_left_new += mySensor.get_data()[1][-new_batch_size_left:]
+                    
                     if flicker_window.get_flicker_location() == 'center':
                         new_batch_size = min(new_data_window_size, reduction_factor_int - len(ys_occ_1_new))
                         ys_occ_1_new += mySensor.get_data()[0][-new_batch_size:] # Occ. electrode 1, left hemisphere
                         ys_occ_2_new += mySensor.get_data()[1][-new_batch_size:] # Occ. electrode 2, right hemisphere
-                    
-                    elif flicker_window.get_flicker_location() == 'left-right':
-                        new_batch_size_left = min(new_data_window_size, reduction_factor_int_left - len(ys_occ_1_new))
-                        new_batch_size_right = min(new_data_window_size, reduction_factor_int_right - len(ys_occ_2_new))
-                        ys_occ_1_new += mySensor.get_data()[0][-new_batch_size_left:]
-                        ys_occ_2_new += mySensor.get_data()[1][-new_batch_size_right:]
-                    
-                    elif flicker_window.get_flicker_location() == 'right':
-                            # Occ. lobe 1 (left) for the right-sided flicker
-                            new_batch_size_left = min(new_data_window_size, reduction_factor_int_left - len(ys_occ_1_new))
-                            # Occ. electrode 1, left hemisphere
-                            ys_occ_1_new += mySensor.get_data()[0][-new_batch_size_left:]
-                            # Occ. electrode 2, right hemisphere - used to compare results
-                            ys_occ_2_new += mySensor.get_data()[1][-new_batch_size_left:]
-                        
-                    elif flicker_window.get_flicker_location() == 'left':
-                            # Occ. lobe 2 (right) for the left-sided flicker
-                            new_batch_size_right = min(new_data_window_size, reduction_factor_int_right - len(ys_occ_2_new))
-                            # Occ. electrode 1, left hemisphere - used to compare results
-                            ys_occ_1_new += mySensor.get_data()[0][-new_batch_size_right:]
-                            # Occ. electrode 2, right hemisphere
-                            ys_occ_2_new += mySensor.get_data()[1][-new_batch_size_right:]
 
-                    if flicker_window.get_flicker_location() == 'center':
+                        ys_tmp_1_new += mySensor.get_data()[0][-new_batch_size:] # Tmp. electrode 1, left hemisphere
+                        ys_tmp_2_new += mySensor.get_data()[1][-new_batch_size:] # Tmp. electrode 2, right hemisphere
+
                         if len(ys_occ_1_new) == reduction_factor_int:
                             # A new batch corresp. to 1 flicker period is complete
                             error_recovery_counter += 1
                             if error_recovery_counter == error_recovery_threshold:
                                 ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
                                 ys_occ_2_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                ys_tmp_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                ys_tmp_2_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
                                 error_recovery_counter = 0
 
-                            # Linear regression
-                            # xs_flicker = np.arange(0, len(ys_occ_1_new)).tolist()
-                            # reg1_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_occ_1_new))
-                            # reg2_flicker.fit(np.array(xs_flicker).reshape(-1,1), np.array(ys_occ_2_new))
-
-                            # for t in range(reduction_factor_int):
-                            #     ys_occ_1_new_curr_drift = reg1_flicker.coef_[0] * (reduction_factor_int - t)
-                            #     ys_occ_2_new_curr_drift = reg2_flicker.coef_[0] * (reduction_factor_int - t)
-                            #     ys_occ_1_new[t] = ys_occ_1_new[t] + ys_occ_1_new_curr_drift - reg1_flicker.intercept_
-                            #     ys_occ_2_new[t] = ys_occ_2_new[t] + ys_occ_2_new_curr_drift - reg2_flicker.intercept_
-
-                            # ys_occ_1_new_avg = np.average(ys_occ_1_new)
-                            # ys_occ_2_new_avg = np.average(ys_occ_2_new)
-                            # ys_occ_1.append(ys_occ_1_new_avg)
-                            # ys_occ_2.append(ys_occ_2_new_avg)
-
                             ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
                             ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
-
-                            # Debugging - logging every element from the buffers w/o averaging
-                            # for t in range(len(ys_occ_1_new)):
-                            #     flicker_window.log_plot_data(ys_occ_1_new[t], 'occ_1')
-                            #     flicker_window.log_plot_data(ys_occ_2_new[t], 'occ_2')
-
-                            # flicker_window.log_plot_data(ys_occ_1_new_avg, 'occ_1')
-                            # flicker_window.log_plot_data(ys_occ_2_new_avg, 'occ_2')
+                            
+                            ys_tmp_1_min_max_diff = max(ys_tmp_1_new) - min(ys_tmp_1_new)
+                            ys_tmp_2_min_max_diff = max(ys_tmp_2_new) - min(ys_tmp_2_new)
                             
                             flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
                             flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
                             flicker_window.log_data(ys_occ_1_new, 'occ_1')
                             flicker_window.log_data(ys_occ_2_new, 'occ_2')
+
+                            flicker_window.log_plot_data(ys_tmp_1_min_max_diff, 'tmp_1')
+                            flicker_window.log_plot_data(ys_tmp_2_min_max_diff, 'tmp_2')
+                            flicker_window.log_data(ys_tmp_1_new, 'tmp_1')
+                            flicker_window.log_data(ys_tmp_2_new, 'tmp_2')
                             
                             ys_occ_1_new = []
                             ys_occ_2_new = []
-                    
-                    elif flicker_window.get_flicker_location() == 'left-right':
-                        if len(ys_occ_1_new) == reduction_factor_int_left:
-                            # A new batch corresp. to 1 flicker period is complete
-                            error_recovery_counter_left += 1
-                            if error_recovery_counter_left == error_recovery_threshold_left:
-                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
-                                error_recovery_counter_left = 0
+                            ys_tmp_1_new = []
+                            ys_tmp_2_new = []
+                    else:
+                        if 'right' in flicker_window.get_flicker_location():
+                            # Processing the data registered by the left (1) occipital lobe at the right eye flicker frequency,
+                            #   and logging the right (2) occipital lobe data at the same (contralatral) frequency for reference
+                            
+                            new_batch_size_left = min(new_data_window_size, reduction_factor_int_left - len(ys_occ_1_left_new))
 
-                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
-                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
-                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
-                            ys_occ_1_new = []
+                            # Occ. lobe 1 (left) buffer is updated with its corresponding left batch size,
+                            #   while the occ. lobe 2 (right) buffer is updated with the same (so contralateral)
+                            #   left batch size
+                            ys_occ_1_left_new += mySensor.get_data()[0][-new_batch_size_left:]
+                            ys_occ_2_left_new += mySensor.get_data()[1][-new_batch_size_left:]
+                            
+                            ys_tmp_1_left_new += mySensor.get_data()[0][-new_batch_size_left:]
+                            ys_tmp_2_left_new += mySensor.get_data()[1][-new_batch_size_left:]
+
+                            if len(ys_occ_1_left_new) == reduction_factor_int_left:
+                                # A new batch corresp. to 1 flicker period is complete
+                                error_recovery_counter_left += 1
+                                if error_recovery_counter_left == error_recovery_threshold_left:
+                                    ys_occ_1_left_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                    ys_occ_2_left_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                    ys_tmp_1_left_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                    ys_tmp_2_left_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                    error_recovery_counter_left = 0
+
+                                ys_occ_1_left_min_max_diff = max(ys_occ_1_left_new) - min(ys_occ_1_left_new)
+                                flicker_window.log_plot_data(ys_occ_1_left_min_max_diff, 'occ_1_left')
+                                flicker_window.log_data(ys_occ_1_left_new, 'occ_1_left')
+                                ys_occ_1_left_new = []
+
+                                # The second lobe, for comparison
+                                ys_occ_2_left_min_max_diff = max(ys_occ_2_left_new) - min(ys_occ_2_left_new)
+                                flicker_window.log_plot_data(ys_occ_2_left_min_max_diff, 'occ_2_left')
+                                flicker_window.log_data(ys_occ_2_left_new, 'occ_2_left')
+                                ys_occ_2_left_new = []
+
+                                # Temporals
+                                ys_tmp_1_left_min_max_diff = max(ys_tmp_1_left_new) - min(ys_tmp_1_left_new)
+                                flicker_window.log_plot_data(ys_tmp_1_left_min_max_diff, 'tmp_1_left')
+                                flicker_window.log_data(ys_tmp_1_left_new, 'tmp_1_left')
+                                ys_tmp_1_left_new = []
+
+                                ys_tmp_2_left_min_max_diff = max(ys_tmp_2_left_new) - min(ys_tmp_2_left_new)
+                                flicker_window.log_plot_data(ys_tmp_2_left_min_max_diff, 'tmp_2_left')
+                                flicker_window.log_data(ys_tmp_2_left_new, 'tmp_2_left')
+                                ys_tmp_2_left_new = []
+
+                        if 'left' in flicker_window.get_flicker_location():
+                            # Processing the data registered by the right (2) occipital lobe at the left eye flicker frequency,
+                            #   and logging the left (1) occipital lobe data at the same (contralatral) frequency for reference
                         
-                        if len(ys_occ_2_new) == reduction_factor_int_right:
-                            # A new batch corresp. to 1 flicker period is complete
-                            error_recovery_counter_right += 1
-                            if error_recovery_counter_right == error_recovery_threshold_right:
-                                ys_occ_2_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
-                                error_recovery_counter_right = 0
-                            
-                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
-                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
-                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
-                            ys_occ_2_new = []
-
-                    elif flicker_window.get_flicker_location() == 'right':
-                        # Occ. lobe 1 (left) for the right-sided flicker
+                            new_batch_size_right = min(new_data_window_size, reduction_factor_int_right - len(ys_occ_2_right_new))
                         
-                        if len(ys_occ_1_new) == reduction_factor_int_left:
-                            # A new batch corresp. to 1 flicker period is complete
-                            error_recovery_counter_left += 1
-                            if error_recovery_counter_left == error_recovery_threshold_left:
-                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
-                                ys_occ_2_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
-                                error_recovery_counter_left = 0
-
-                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
-                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
-                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
-                            ys_occ_1_new = []
-
-                            # The second lobe, for comparison
-                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
-                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
-                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
-                            ys_occ_2_new = []
-
-                    elif flicker_window.get_flicker_location() == 'left':
-                        # Occ. lobe 2 (right) for the left-sided flicker
-                        
-                        if len(ys_occ_2_new) == reduction_factor_int_right:
-                            # A new batch corresp. to 1 flicker period is complete
-                            error_recovery_counter_right += 1
-                            if error_recovery_counter_right == error_recovery_threshold_right:
-                                ys_occ_1_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
-                                ys_occ_2_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
-                                error_recovery_counter_right = 0
+                            # Occ. lobe 2 (right) buffer is updated with its corresponding right batch size,
+                            #   while the occ. lobe 1 (left) buffer is updated with the same (so contralateral)
+                            #   right batch size
+                            ys_occ_2_right_new += mySensor.get_data()[1][-new_batch_size_right:]
+                            ys_occ_1_right_new += mySensor.get_data()[0][-new_batch_size_right:]
                             
-                            # The first lobe, for comparison
-                            ys_occ_1_min_max_diff = max(ys_occ_1_new) - min(ys_occ_1_new)
-                            flicker_window.log_plot_data(ys_occ_1_min_max_diff, 'occ_1')
-                            flicker_window.log_data(ys_occ_1_new, 'occ_1')
-                            ys_occ_1_new = []
+                            ys_tmp_2_right_new += mySensor.get_data()[1][-new_batch_size_right:]
+                            ys_tmp_1_right_new += mySensor.get_data()[0][-new_batch_size_right:]
 
-                            ys_occ_2_min_max_diff = max(ys_occ_2_new) - min(ys_occ_2_new)
-                            flicker_window.log_plot_data(ys_occ_2_min_max_diff, 'occ_2')
-                            flicker_window.log_data(ys_occ_2_new, 'occ_2')
-                            ys_occ_2_new = []
+                            if len(ys_occ_2_right_new) == reduction_factor_int_right:
+                                # A new batch corresp. to 1 flicker period is complete
+                                error_recovery_counter_right += 1
+                                if error_recovery_counter_right == error_recovery_threshold_right:
+                                    ys_occ_2_right_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                    ys_occ_1_right_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                    ys_tmp_2_right_new.append(mySensor.get_data()[1][-(new_data_window_size + 1)])
+                                    ys_tmp_1_right_new.append(mySensor.get_data()[0][-(new_data_window_size + 1)])
+                                    error_recovery_counter_left = 0
+
+                                ys_occ_2_right_min_max_diff = max(ys_occ_2_right_new) - min(ys_occ_2_right_new)
+                                flicker_window.log_plot_data(ys_occ_2_right_min_max_diff, 'occ_2_right')
+                                flicker_window.log_data(ys_occ_2_right_new, 'occ_2_right')
+                                ys_occ_2_right_new = []
+
+                                # The first lobe, for comparison
+                                ys_occ_1_right_min_max_diff = max(ys_occ_1_right_new) - min(ys_occ_1_right_new)
+                                flicker_window.log_plot_data(ys_occ_1_right_min_max_diff, 'occ_1_right')
+                                flicker_window.log_data(ys_occ_1_right_new, 'occ_1_right')
+                                ys_occ_1_right_new = []
+
+                                # Temporal
+                                ys_tmp_2_right_min_max_diff = max(ys_tmp_2_right_new) - min(ys_tmp_2_right_new)
+                                flicker_window.log_plot_data(ys_tmp_2_right_min_max_diff, 'tmp_2_right')
+                                flicker_window.log_data(ys_tmp_2_right_new, 'tmp_2_right')
+                                ys_tmp_2_right_new = []
+
+                                ys_tmp_1_right_min_max_diff = max(ys_tmp_1_right_new) - min(ys_tmp_1_right_new)
+                                flicker_window.log_plot_data(ys_tmp_1_right_min_max_diff, 'tmp_1_right')
+                                flicker_window.log_data(ys_tmp_1_right_new, 'tmp_1_right')
+                                ys_tmp_1_right_new = []
+
             else:
                 # Stage 1: Preparing the EEG data (absolute amplitude correction) for the blinking detection
                 for j in range(4):
@@ -1605,6 +1824,7 @@ class Game:
                 if self.direction != 0 and ball.y_vel > 0:
                     if self.direction == 1:
                         if blinked_bool == 0:
+                            # TODO: Set a maximum threshold to prevent detecting the pulse as a blink
                             if (np.average(ys1_last[0:99]) - np.average(ys1_last[80:90]) > BLINK_THRESHOLD) and paddle.x + paddle.width + paddle.VEL <= self.WIDTH:
                                 # paddle.move(self.direction)
                                 paddle.move_to_final_location(ball.x_predict, self.steps_needed, self.direction)
